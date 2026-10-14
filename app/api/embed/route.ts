@@ -1,4 +1,5 @@
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
+import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
 
 export async function POST(request: Request) {
   try {
@@ -7,6 +8,8 @@ export async function POST(request: Request) {
       return jsonError(new Error("texts must contain 1 to 64 items"), 400);
     }
     const texts = body.texts.map((text) => String(text).slice(0, 12000));
+    const user = await requireApiUser();
+    await consumeQuota(user, "embedding", texts.reduce((total, text) => total + text.length, 0));
     const config = getOpenAIConfig();
     const upstream = await fetch(`${config.baseUrl}/embeddings`, {
       method: "POST",
@@ -18,6 +21,6 @@ export async function POST(request: Request) {
     const embeddings = payload.data.sort((a, b) => a.index - b.index).map((item) => item.embedding);
     return Response.json({ embeddings });
   } catch (error) {
-    return jsonError(error);
+    return apiErrorResponse(error);
   }
 }

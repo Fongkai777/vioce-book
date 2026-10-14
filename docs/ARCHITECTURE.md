@@ -22,6 +22,8 @@ Microphone
   -> browser audio playback
 ```
 
+Every API route identifies the signed-in ChatGPT user before calling OpenAI. D1 stores the user's Singapore-calendar-day counters and any administrator quota override. The answer and transcription routes atomically increment usage only while the new value remains within the limit, so simultaneous requests cannot overspend the same allowance.
+
 ## Why browser-side ingestion for the MVP
 
 The source book never needs to be stored on the server, which gives the prototype a clear privacy story and removes upload-storage lifecycle work. Only passage text is sent to the embedding endpoint. The tradeoff is that indexing must restart after a refresh and large books consume browser memory.
@@ -54,6 +56,9 @@ The answer prompt labels evidence `[S1]`, `[S2]`, and so on. The model must answ
 - `.env.local`, generated data, and build artifacts are ignored by Git.
 - Uploaded PDF bytes remain in the browser session.
 - API inputs are bounded by passage count and length.
+- Every OpenAI-backed route requires an authenticated Site visitor.
+- Daily question and voice limits are enforced in D1; indexing and speech also have fixed abuse ceilings.
+- Administrator access is controlled by `ADMIN_EMAILS`, independently from the Site visitor allowlist.
 - Upstream error messages are returned without exposing credentials.
 
 ## Failure behavior

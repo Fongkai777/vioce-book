@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, BookOpen, Check, ChevronRight, FileText, Headphones,
-  LoaderCircle, Mic, Pause, Play, RotateCcw, Sparkles, Square,
-  Upload, Volume2, X,
+  LoaderCircle, Mic, Pause, Play, RotateCcw, ShieldCheck, Sparkles,
+  Square, Upload, Volume2, X,
 } from "lucide-react";
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
 
@@ -16,6 +16,11 @@ type Chunk = {
 type Source = Pick<Chunk, "id" | "sectionTitle" | "pageStart" | "pageEnd" | "text">;
 type Exchange = { id: string; question: string; answer: string; sources: Source[] };
 type Book = { name: string; pages: number; chapters: number; chunks: number };
+type QuotaSnapshot = {
+  questions: { used: number; limit: number; remaining: number };
+  voice: { usedSeconds: number; limitSeconds: number; remainingSeconds: number };
+  isAdmin: boolean;
+};
 
 const stageCopy: Record<Stage, string> = {
   idle: "Upload a book to begin", reading: "Reading every page…",
@@ -46,11 +51,14 @@ export default function Home() {
   const [error, setError] = useState("");
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [isAudioPaused, setIsAudioPaused] = useState(false);
+  const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioParts = useRef<Blob[]>([]);
   const audioPlayer = useRef<HTMLAudioElement | null>(null);
   const conversationEnd = useRef<HTMLDivElement>(null);
+  const recordingDurationSeconds = useRef(0);
+  const recordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const busy = !["idle", "ready", "error", "listening", "speaking"].includes(stage);
   const latest = exchanges.at(-1);
@@ -60,6 +68,14 @@ export default function Home() {
   useEffect(() => () => {
     audioPlayer.current?.pause();
     mediaRecorder.current?.stream.getTracks().forEach((track) => track.stop());
+    if (recordingTimer.current) clearTimeout(recordingTimer.current);
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/quota", { cache: "no-store" })
+      .then((response) => response.json().then((payload) => ({ response, payload })))
+      .then(({ response, payload }) => { if (response.ok) setQuota(payload.quota); })
+      .catch(() => undefined);
   }, []);
 
   const sampleQuestions = useMemo(() => book ? [
@@ -142,6 +158,7 @@ export default function Home() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Answer generation failed");
+      if (payload.quota) setQuota(payload.quota);
       const sources = retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text }));
       setExchanges((items) => [...items, { id: crypto.randomUUID(), question: cleanQuestion, answer: payload.answer, sources }]);
       await speak(payload.answer);
@@ -162,26 +179,39 @@ export default function Home() {
       audioParts.current = [];
       recorder.ondataavailable = (event) => event.data.size && audioParts.current.push(event.data);
       recorder.onstop = async () => {
+        if (recordingTimer.current) clearTimeout(recordingTimer.current);
         stream.getTracks().forEach((track) => track.stop());
         const mimeType = recorder.mimeType || "audio/webm";
         const extension = mimeType.includes("mp4") ? "m4a" : "webm";
-        await transcribe(new File(audioParts.current, `question.${extension}`, { type: mimeType }));
+        const durationSeconds = Math.max(1, Math.min(60, recordingDurationSeconds.current));
+        await transcribe(new File(audioParts.current, `question.${extension}`, { type: mimeType }), durationSeconds);
       };
-      mediaRecorder.current = recorder; recorder.start(); setStage("listening");
+      mediaRecorder.current = recorder;
+      recordingDurationSeconds.current = 0;
+      recorder.start();
+      recordingTimer.current = setInterval(() => {
+        recordingDurationSeconds.current += 1;
+        if (recordingDurationSeconds.current >= 60) stopRecording();
+      }, 1_000);
+      setStage("listening");
     } catch {
       setError("Microphone access was denied. You can still type a question below."); setStage("error");
     }
   }
 
-  function stopRecording() { if (mediaRecorder.current?.state === "recording") mediaRecorder.current.stop(); }
+  function stopRecording() {
+    if (recordingTimer.current) clearTimeout(recordingTimer.current);
+    if (mediaRecorder.current?.state === "recording") mediaRecorder.current.stop();
+  }
 
-  async function transcribe(audio: File) {
+  async function transcribe(audio: File, durationSeconds: number) {
     try {
       setStage("transcribing");
-      const form = new FormData(); form.append("audio", audio);
+      const form = new FormData(); form.append("audio", audio); form.append("durationSeconds", String(durationSeconds));
       const response = await fetch("/api/transcribe", { method: "POST", body: form });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Transcription failed");
+      if (payload.quota) setQuota(payload.quota);
       if (!payload.text) throw new Error("No speech was detected. Please try again closer to the microphone.");
       setQuestion(payload.text); await ask(payload.text);
     } catch (caught) {
@@ -223,8 +253,8 @@ export default function Home() {
       <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => void handleFile(event.target.files?.[0])} />
       <header className="topbar">
         <button className="brand" onClick={resetBook} aria-label="Return to start"><span className="brand-mark"><BookOpen size={18} strokeWidth={2.4} /></span><span>VOICEBOOK</span></button>
-        <div className="privacy-note"><span className="privacy-dot" /> Your book stays in this browser session</div>
-        <button className="new-book" onClick={() => fileInput.current?.click()}><Upload size={15} /> {book ? "Change book" : "Upload book"}</button>
+        <div className="quota-note">{quota ? <><b>{quota.questions.remaining}</b> questions · <b>{Math.floor(quota.voice.remainingSeconds / 60)}</b> voice min left today</> : <><span className="privacy-dot" /> Your book stays in this browser session</>}</div>
+        <div className="topbar-actions">{quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}<button className="new-book" onClick={() => fileInput.current?.click()}><Upload size={15} /> {book ? "Change book" : "Upload book"}</button></div>
       </header>
 
       <section className="workspace">

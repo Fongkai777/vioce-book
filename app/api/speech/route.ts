@@ -1,10 +1,13 @@
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
+import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { text?: unknown };
     const text = String(body.text || "").trim().slice(0, 5000);
     if (!text) return jsonError(new Error("Text is required"), 400);
+    const user = await requireApiUser();
+    await consumeQuota(user, "speech", text.length);
     const config = getOpenAIConfig();
     const upstream = await fetch(`${config.baseUrl}/audio/speech`, {
       method: "POST",
@@ -22,6 +25,6 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
     });
   } catch (error) {
-    return jsonError(error);
+    return apiErrorResponse(error);
   }
 }

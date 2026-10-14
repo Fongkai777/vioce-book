@@ -1,4 +1,5 @@
 import { authHeaders, getOpenAIConfig, jsonError, openAIError, responseText } from "@/lib/openai";
+import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
 
 type Context = { id: string; sectionTitle: string; pageStart: number; pageEnd: number; text: string };
 
@@ -8,6 +9,9 @@ export async function POST(request: Request) {
     const question = String(body.question || "").trim();
     const contexts = Array.isArray(body.contexts) ? body.contexts.slice(0, 8) : [];
     if (!question || !contexts.length) return jsonError(new Error("A question and retrieved context are required"), 400);
+
+    const user = await requireApiUser();
+    await consumeQuota(user, "question", 1);
 
     const evidence = contexts.map((context, index) => {
       const pages = context.pageStart === context.pageEnd ? `p. ${context.pageStart}` : `pp. ${context.pageStart}-${context.pageEnd}`;
@@ -34,8 +38,8 @@ export async function POST(request: Request) {
     const payload = await upstream.json();
     const answer = responseText(payload);
     if (!answer) throw new Error("The model returned an empty answer");
-    return Response.json({ answer });
+    return Response.json({ answer, quota: await getQuotaSnapshot(user) });
   } catch (error) {
-    return jsonError(error);
+    return apiErrorResponse(error);
   }
 }

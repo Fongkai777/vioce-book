@@ -11,6 +11,8 @@ Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder In
 - Page-level source cards and a full passage drawer.
 - Microphone capture, OpenAI transcription, grounded answer generation, and AI voice playback.
 - Typed questions remain available for accessibility and testing.
+- Per-user daily question and voice allowances backed by D1.
+- An administrator dashboard for reviewing usage and adjusting individual limits.
 - Unit tests for heading detection, provenance, BM25, and hybrid retrieval.
 
 ## Run locally
@@ -36,6 +38,7 @@ Open the local URL printed by the development server. Microphone access works on
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | Speech recognition |
 | `OPENAI_TTS_MODEL` | `gpt-4o-mini-tts` | Speech generation |
 | `OPENAI_TTS_VOICE` | `coral` | Synthesized voice |
+| `ADMIN_EMAILS` | required for admin UI | Comma-separated emails allowed to manage user quotas |
 
 Secrets stay in `.env.local`, which is ignored by Git. The browser only calls the application's server routes.
 
@@ -47,6 +50,8 @@ pnpm lint      # code quality
 pnpm build     # production build
 pnpm dev       # local development
 ```
+
+After generating a schema migration with `pnpm db:generate`, apply it to local D1 before running the built Worker preview. Hosted Sites deployments apply committed migrations automatically.
 
 ## Documentation
 
