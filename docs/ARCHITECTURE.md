@@ -22,7 +22,7 @@ Microphone
   -> browser audio playback
 ```
 
-Every API route identifies the signed-in ChatGPT user before calling OpenAI. D1 stores the user's Singapore-calendar-day counters and any administrator quota override. The answer and transcription routes atomically increment usage only while the new value remains within the limit, so simultaneous requests cannot overspend the same allowance.
+Every API route validates the site's HttpOnly login session before calling OpenAI. D1 stores local accounts, hashed passwords, sessions, Singapore-calendar-day counters, and administrator quota overrides. The answer and transcription routes atomically increment usage only while the new value remains within the limit, so simultaneous requests cannot overspend the same allowance.
 
 ## Why browser-side ingestion for the MVP
 
@@ -56,9 +56,10 @@ The answer prompt labels evidence `[S1]`, `[S2]`, and so on. The model must answ
 - `.env.local`, generated data, and build artifacts are ignored by Git.
 - Uploaded PDF bytes remain in the browser session.
 - API inputs are bounded by passage count and length.
-- Every OpenAI-backed route requires an authenticated Site visitor.
+- Every OpenAI-backed route requires an authenticated local account.
 - Daily question and voice limits are enforced in D1; indexing and speech also have fixed abuse ceilings.
-- Administrator access is controlled by `ADMIN_EMAILS`, independently from the Site visitor allowlist.
+- The bootstrap administrator credential is supplied through hosted environment variables and never committed.
+- Administrators can create reviewer accounts; passwords are PBKDF2-hashed with per-user salts.
 - Upstream error messages are returned without exposing credentials.
 
 ## Failure behavior

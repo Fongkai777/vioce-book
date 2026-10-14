@@ -38,9 +38,10 @@ Open the local URL printed by the development server. Microphone access works on
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | Speech recognition |
 | `OPENAI_TTS_MODEL` | `gpt-4o-mini-tts` | Speech generation |
 | `OPENAI_TTS_VOICE` | `coral` | Synthesized voice |
-| `ADMIN_EMAILS` | required for admin UI | Comma-separated emails allowed to manage user quotas |
+| `ADMIN_USERNAME` | `admin` | Bootstrap administrator username |
+| `ADMIN_PASSWORD` | required | Bootstrap administrator password; configure as a hosted secret |
 
-Secrets stay in `.env.local`, which is ignored by Git. The browser only calls the application's server routes.
+Secrets stay in `.env.local`, which is ignored by Git. The browser only calls the application's server routes. User passwords are PBKDF2-hashed before they are stored in D1, and sessions use HttpOnly cookies.
 
 ## Commands
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, BookOpen, Check, ChevronRight, FileText, Headphones,
-  LoaderCircle, Mic, Pause, Play, RotateCcw, ShieldCheck, Sparkles,
+  LoaderCircle, LogOut, Mic, Pause, Play, RotateCcw, ShieldCheck, Sparkles,
   Square, Upload, Volume2, X,
 } from "lucide-react";
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
@@ -20,6 +20,7 @@ type QuotaSnapshot = {
   questions: { used: number; limit: number; remaining: number };
   voice: { usedSeconds: number; limitSeconds: number; remainingSeconds: number };
   isAdmin: boolean;
+  user: { username: string; displayName: string };
 };
 
 const stageCopy: Record<Stage, string> = {
@@ -52,6 +53,7 @@ export default function Home() {
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [isAudioPaused, setIsAudioPaused] = useState(false);
   const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioParts = useRef<Blob[]>([]);
@@ -74,8 +76,15 @@ export default function Home() {
   useEffect(() => {
     void fetch("/api/quota", { cache: "no-store" })
       .then((response) => response.json().then((payload) => ({ response, payload })))
-      .then(({ response, payload }) => { if (response.ok) setQuota(payload.quota); })
-      .catch(() => undefined);
+      .then(({ response, payload }) => {
+        if (response.status === 401) {
+          window.location.replace(`/login?returnTo=${encodeURIComponent(window.location.pathname)}`);
+          return;
+        }
+        if (response.ok) setQuota(payload.quota);
+        setAuthChecked(true);
+      })
+      .catch(() => setAuthChecked(true));
   }, []);
 
   const sampleQuestions = useMemo(() => book ? [
@@ -248,13 +257,20 @@ export default function Home() {
     setError(""); setProgress(0); setStage("idle");
   }
 
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.replace("/login");
+  }
+
+  if (!authChecked) return <main className="session-loading"><LoaderCircle className="spin" size={24} /><span>Opening your reading desk…</span></main>;
+
   return (
     <main className="app-shell">
       <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => void handleFile(event.target.files?.[0])} />
       <header className="topbar">
         <button className="brand" onClick={resetBook} aria-label="Return to start"><span className="brand-mark"><BookOpen size={18} strokeWidth={2.4} /></span><span>VOICEBOOK</span></button>
         <div className="quota-note">{quota ? <><b>{quota.questions.remaining}</b> questions · <b>{Math.floor(quota.voice.remainingSeconds / 60)}</b> voice min left today</> : <><span className="privacy-dot" /> Your book stays in this browser session</>}</div>
-        <div className="topbar-actions">{quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}<button className="new-book" onClick={() => fileInput.current?.click()}><Upload size={15} /> {book ? "Change book" : "Upload book"}</button></div>
+        <div className="topbar-actions">{quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}<button className="new-book" onClick={() => fileInput.current?.click()}><Upload size={15} /> {book ? "Change book" : "Upload book"}</button><button className="icon-action" onClick={() => void logout()} aria-label={`Sign out ${quota?.user.username || "user"}`}><LogOut size={15} /></button></div>
       </header>
 
       <section className="workspace">

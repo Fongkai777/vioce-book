@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Check, LoaderCircle, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Check, LoaderCircle, RefreshCw, ShieldCheck, UserPlus } from "lucide-react";
 
 type ManagedUser = {
   userId: string;
+  username: string;
   email: string;
   displayName: string;
   lastSeenAt: string;
@@ -15,13 +16,17 @@ type ManagedUser = {
   voiceSecondsLimit: number;
 };
 
-export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
+export default function AdminDashboard({ adminUsername }: { adminUsername: string }) {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [date, setDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const loadUsers = useCallback(async () => {
     setLoading(true); setError("");
@@ -75,22 +80,45 @@ export default function AdminDashboard({ adminEmail }: { adminEmail: string }) {
     } finally { setSaving(null); }
   }
 
+  async function createUser(event: React.FormEvent) {
+    event.preventDefault(); setCreating(true); setError("");
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newUsername, displayName: newDisplayName, password: newPassword }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not create user");
+      setNewUsername(""); setNewDisplayName(""); setNewPassword("");
+      await loadUsers();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create user");
+    } finally { setCreating(false); }
+  }
+
   return <main className="admin-shell">
     <header className="admin-header">
       <Link href="/" className="admin-back"><ArrowLeft size={16} /> Back to Voicebook</Link>
-      <div className="admin-identity"><ShieldCheck size={17} /><span>Administrator</span><small>{adminEmail}</small></div>
+      <div className="admin-identity"><ShieldCheck size={17} /><span>Administrator</span><small>{adminUsername}</small></div>
     </header>
     <section className="admin-content">
       <div className="admin-title-row">
-        <div><p className="eyebrow">Usage control · {date || "today"}</p><h1>User allowances</h1><p>Each visitor signs in with their own ChatGPT account. Changes apply immediately.</p></div>
+        <div><p className="eyebrow">Usage control · {date || "today"}</p><h1>User allowances</h1><p>Create login accounts for reviewers, then adjust their daily limits at any time.</p></div>
         <button className="refresh-button" onClick={() => void loadUsers()} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /> Refresh</button>
       </div>
       {error && <div className="admin-error">{error}</div>}
+      <form className="create-user-card" onSubmit={(event) => void createUser(event)}>
+        <div><UserPlus size={19} /><span><strong>Create reviewer account</strong><small>Passwords are stored as one-way hashes.</small></span></div>
+        <input aria-label="Display name" placeholder="Display name" value={newDisplayName} onChange={(event) => setNewDisplayName(event.target.value)} />
+        <input aria-label="Username" placeholder="Username" autoComplete="off" value={newUsername} onChange={(event) => setNewUsername(event.target.value)} required />
+        <input aria-label="Temporary password" placeholder="Temporary password (10+ characters)" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={10} required />
+        <button className="save-quota" disabled={creating}>{creating ? <LoaderCircle className="spin" size={15} /> : "Create"}</button>
+      </form>
       {loading && !users.length ? <div className="admin-loading"><LoaderCircle className="spin" /> Loading users…</div> :
         <div className="admin-table-wrap"><table className="admin-table">
           <thead><tr><th>User</th><th>Today</th><th>Daily questions</th><th>Daily voice</th><th /></tr></thead>
           <tbody>{users.map((user) => <tr key={user.userId}>
-            <td><strong>{user.displayName}</strong><small>{user.email}</small><small>Last seen {new Date(user.lastSeenAt).toLocaleString()}</small></td>
+            <td><strong>{user.displayName}</strong><small>@{user.username}</small><small>Last seen {new Date(user.lastSeenAt).toLocaleString()}</small></td>
             <td><span>{user.questionCount} questions</span><span>{Math.ceil(user.voiceSeconds / 60)} voice min</span></td>
             <td><input type="number" min="0" max="500" value={user.questionLimit} onChange={(event) => updateUser(user.userId, "questionLimit", Number(event.target.value))} /><span>per day</span></td>
             <td><input type="number" min="0" max="600" step="1" value={user.voiceSecondsLimit / 60} onChange={(event) => updateUser(user.userId, "voiceMinutesLimit", Number(event.target.value))} /><span>minutes</span></td>

@@ -1,5 +1,8 @@
 import { env } from "cloudflare:workers";
-import { getChatGPTUser, type ChatGPTUser } from "@/app/chatgpt-auth";
+import { type AppUser, requireAuthenticatedUser } from "@/lib/auth";
+import { ApiError, apiErrorResponse } from "@/lib/errors";
+
+export { apiErrorResponse };
 
 export const DEFAULT_QUESTION_LIMIT = 20;
 export const DEFAULT_VOICE_SECONDS_LIMIT = 10 * 60;
@@ -13,14 +16,8 @@ export type QuotaSnapshot = {
   questions: { used: number; limit: number; remaining: number };
   voice: { usedSeconds: number; limitSeconds: number; remainingSeconds: number };
   isAdmin: boolean;
-  user: { userId: string; email: string; displayName: string };
+  user: { userId: string; username: string; displayName: string };
 };
-
-export class ApiError extends Error {
-  constructor(message: string, public status: number) {
-    super(message);
-  }
-}
 
 function database() {
   if (!env.DB) throw new Error("Usage database is unavailable");
@@ -35,35 +32,18 @@ export function singaporeDate(now = new Date()) {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
-export function isAdminUser(user: Pick<ChatGPTUser, "email">) {
-  const admins = (env.ADMIN_EMAILS || process.env.ADMIN_EMAILS || "")
-    .split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-  return admins.includes(user.email.toLowerCase());
+export function isAdminUser(user: Pick<AppUser, "role">) {
+  return user.role === "admin";
 }
 
 export async function requireApiUser() {
-  const user = await getChatGPTUser();
-  if (!user) throw new ApiError("Please sign in to use Voicebook", 401);
-  await upsertUser(user);
-  return user;
+  return requireAuthenticatedUser();
 }
 
 export async function requireAdminUser() {
   const user = await requireApiUser();
   if (!isAdminUser(user)) throw new ApiError("Administrator access is required", 403);
   return user;
-}
-
-async function upsertUser(user: ChatGPTUser) {
-  const now = new Date().toISOString();
-  await database().prepare(`
-    INSERT INTO app_users (user_id, email, display_name, created_at, last_seen_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET
-      email = excluded.email,
-      display_name = excluded.display_name,
-      last_seen_at = excluded.last_seen_at
-  `).bind(user.userId, user.email, user.displayName, now, now).run();
 }
 
 async function ensureDailyRow(userId: string, date: string) {
@@ -77,7 +57,7 @@ async function ensureDailyRow(userId: string, date: string) {
   `).bind(userId, date, now).run();
 }
 
-export async function getQuotaSnapshot(user: ChatGPTUser): Promise<QuotaSnapshot> {
+export async function getQuotaSnapshot(user: AppUser): Promise<QuotaSnapshot> {
   const date = singaporeDate();
   await ensureDailyRow(user.userId, date);
   const row = await database().prepare(`
@@ -105,11 +85,11 @@ export async function getQuotaSnapshot(user: ChatGPTUser): Promise<QuotaSnapshot
       remainingSeconds: Math.max(0, row.voiceSecondsLimit - row.voiceSeconds),
     },
     isAdmin: isAdminUser(user),
-    user: { userId: user.userId, email: user.email, displayName: user.displayName },
+    user: { userId: user.userId, username: user.username, displayName: user.displayName },
   };
 }
 
-export async function consumeQuota(user: ChatGPTUser, meter: Meter, rawAmount: number) {
+export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: number) {
   const amount = Math.max(1, Math.ceil(rawAmount));
   const date = singaporeDate();
   await ensureDailyRow(user.userId, date);
@@ -145,10 +125,4 @@ export async function consumeQuota(user: ChatGPTUser, meter: Meter, rawAmount: n
     : [amount, now, user.userId, date, amount];
   const result = await statement.bind(...args).run();
   if (!result.meta.changes) throw new ApiError(spec.message, 429);
-}
-
-export function apiErrorResponse(error: unknown) {
-  const status = error instanceof ApiError ? error.status : 500;
-  const message = error instanceof Error ? error.message : "Unexpected server error";
-  return Response.json({ error: message }, { status });
 }

@@ -1,4 +1,4 @@
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const appUsers = sqliteTable("app_users", {
   userId: text("user_id").primaryKey(),
@@ -6,6 +6,23 @@ export const appUsers = sqliteTable("app_users", {
   displayName: text("display_name").notNull(),
   createdAt: text("created_at").notNull(),
   lastSeenAt: text("last_seen_at").notNull(),
+  username: text("username"),
+  passwordHash: text("password_hash"),
+  role: text("role").notNull().default("user"),
+  active: integer("active").notNull().default(1),
+}, (table) => [uniqueIndex("app_users_username_unique").on(table.username)]);
+
+export const authSessions = sqliteTable("auth_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id").notNull().references(() => appUsers.userId, { onDelete: "cascade" }),
+  createdAt: text("created_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+});
+
+export const authLoginAttempts = sqliteTable("auth_login_attempts", {
+  attemptKey: text("attempt_key").primaryKey(),
+  windowStartedAt: text("window_started_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
 });
 
 export const quotaOverrides = sqliteTable("quota_overrides", {

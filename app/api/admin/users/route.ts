@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { createUserAccount } from "@/lib/auth";
 import {
   apiErrorResponse, DEFAULT_QUESTION_LIMIT, DEFAULT_VOICE_SECONDS_LIMIT,
   requireAdminUser, singaporeDate,
@@ -16,6 +17,7 @@ export async function GET() {
     const result = await db().prepare(`
       SELECT
         users.user_id AS userId,
+        users.username,
         users.email,
         users.display_name AS displayName,
         users.last_seen_at AS lastSeenAt,
@@ -27,9 +29,25 @@ export async function GET() {
       LEFT JOIN daily_usage usage
         ON usage.user_id = users.user_id AND usage.usage_date = ?
       LEFT JOIN quota_overrides quota ON quota.user_id = users.user_id
+      WHERE users.username IS NOT NULL
       ORDER BY users.last_seen_at DESC
     `).bind(DEFAULT_QUESTION_LIMIT, DEFAULT_VOICE_SECONDS_LIMIT, date).all();
     return Response.json({ date, users: result.results });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    await requireAdminUser();
+    const body = (await request.json()) as { username?: unknown; password?: unknown; displayName?: unknown };
+    const userId = await createUserAccount({
+      username: String(body.username || ""),
+      password: String(body.password || ""),
+      displayName: String(body.displayName || ""),
+    });
+    return Response.json({ ok: true, userId }, { status: 201 });
   } catch (error) {
     return apiErrorResponse(error);
   }
