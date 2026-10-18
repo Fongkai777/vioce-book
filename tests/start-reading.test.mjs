@@ -23,14 +23,14 @@ function actions(books, disabled = false) {
 test("an existing library offers choosing and uploading as parallel entry points", () => {
   const buttons = actions([{ id: "book-1", name: "测试书" }]);
   assert.equal(buttons.length, 2);
-  assert.match(buttons[0], /从图书馆选一本/);
-  assert.match(buttons[1], /上传一本 PDF/);
+  assert.match(buttons[0], /Choose from library/);
+  assert.match(buttons[1], /Upload a PDF/);
   assert.ok(buttons.every(button => !button.includes('disabled=""')));
 });
 test("an empty library clearly directs users to upload, and loading disables both actions", () => {
   const buttons = actions([]);
   assert.match(buttons[0], /disabled=""/);
-  assert.match(buttons[0], /图书馆还是空的/);
+  assert.match(buttons[0], /Your library is empty/);
   assert.doesNotMatch(buttons[1], /disabled=""/);
   assert.ok(actions([{ id: "book-1" }], true).every(button => button.includes('disabled=""')));
 });
