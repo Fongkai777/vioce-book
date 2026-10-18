@@ -19,6 +19,7 @@ import { AnswerFeedback, ReaderSettings } from "./reader-controls";
 import StartReading from "./start-reading";
 import SampleLibrary from "./sample-library";
 import { addSampleToLibrary } from "@/lib/sample-library";
+import BookManager from "./book-manager";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
@@ -53,6 +54,7 @@ function AnswerText({ text, onCitation }: { text: string; onCitation: (index: nu
 }
 
 export default function Home() {
+  const [workspaceTab, setWorkspaceTab] = useState<"chat" | "books">("chat");
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
   const [book, setBook] = useState<BookSummary | null>(null);
@@ -238,6 +240,7 @@ export default function Home() {
       setStage("ready");
       setLibraryOpen(false);
       setSampleLibraryOpen(false);
+      setWorkspaceTab("chat");
       await markBookOpened(ownerId, stored.id);
       setLibrary(await listBooks(ownerId));
     } catch (caught) {
@@ -452,10 +455,10 @@ export default function Home() {
     <main className="app-shell">
       <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file); }} />
       <header className="topbar">
-        <button className="brand" onClick={resetBook} aria-label="Return to start"><span className="brand-mark"><BookOpen size={18} strokeWidth={2.4} /></span><span>VOICEBOOK</span></button>
+        <button className="brand" onClick={() => { if (!bookTransitionBlocked) { resetBook(); setWorkspaceTab("chat"); } }} aria-label="Return to start"><span className="brand-mark"><BookOpen size={18} strokeWidth={2.4} /></span><span>VOICEBOOK</span></button>
         <div className="topbar-actions">
           {quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}
-          <button className="library-toggle" onClick={() => setLibraryOpen((value) => !value)} aria-label="Library"><Library size={15} /><span>Library</span></button>
+          {workspaceTab === "chat" && <button className="library-toggle" onClick={() => setLibraryOpen((value) => !value)} aria-label="Library"><Library size={15} /><span>Library</span></button>}
           <div className="account-quota" role="status" aria-label="今日剩余额度" title="剩余额度 / 每日总额；语音格式为分:秒。每天新加坡时间 00:00 重置。">
             <small>今日剩余 / 每日总额</small>
             {quota ? <div><span>提问 <b>{quota.questions.remaining}</b> / {quota.questions.limit} 次</span><span>语音 <b>{formatQuotaDuration(quota.voice.remainingSeconds)}</b> / {formatQuotaDuration(quota.voice.limitSeconds)}</span></div> : <span>额度暂时无法加载</span>}
@@ -467,9 +470,18 @@ export default function Home() {
         </div>
       </header>
 
+      <nav className="workspace-tabs" role="tablist" aria-label="Workspace">
+        {([ ["chat", "Chat"], ["books", "Book management"] ] as const).map(([id, label]) => <button key={id} role="tab" id={`workspace-tab-${id}`} aria-controls={`workspace-panel-${id}`} aria-selected={workspaceTab === id} tabIndex={workspaceTab === id ? 0 : -1} disabled={bookTransitionBlocked} onClick={() => { setWorkspaceTab(id); setLibraryOpen(false); }} onKeyDown={event => {
+          if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "chat" : event.key === "End" ? "books" : id === "chat" ? "books" : "chat"; setWorkspaceTab(next); setLibraryOpen(false); document.getElementById(`workspace-tab-${next}`)?.focus(); }
+        }}>{id === "chat" ? <Headphones size={16} /> : <Library size={16} />}{label}</button>)}
+      </nav>
+      {workspaceTab === "books" && quota && <section role="tabpanel" id="workspace-panel-books" aria-labelledby="workspace-tab-books">
+        <BookManager key={quota.user.userId} ownerId={quota.user.userId} books={library} preferredBookId={book?.id} disabled={bookTransitionBlocked} onChat={openStoredBook} onRemove={removeLibraryBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} status={busy ? `${stageCopy[stage]} ${progress}%` : undefined} error={error} />
+      </section>}
+
       {libraryOpen && <button className="library-backdrop" onClick={() => setLibraryOpen(false)} aria-label="Close library" />}
 
-      <section className="workspace">
+      <section className="workspace" role="tabpanel" id="workspace-panel-chat" aria-labelledby="workspace-tab-chat" hidden={workspaceTab !== "chat"}>
         <aside className={`book-panel ${libraryOpen ? "mobile-open" : ""}`}>
           <div className="library-heading"><div><p className="eyebrow">Local library</p><span>{library.length} {library.length === 1 ? "book" : "books"}</span></div><button onClick={() => fileInput.current?.click()} disabled={bookTransitionBlocked} aria-label="Add a PDF"><Plus size={16} /></button></div>
           {library.length ? <div className="library-list">{library.map((item) => <div className={`library-item ${book?.id === item.id ? "active" : ""}`} key={item.id}>

@@ -144,6 +144,21 @@ export async function saveBook(ownerId: string, book: Omit<StoredBook, "ownerId"
   }
 }
 
+// Read the original file only when the account opens PDF preview, never for lists/chat.
+export async function getBookPdf(ownerId: string, bookId: string): Promise<Blob | undefined> {
+  if (!ownerId || !bookId) return undefined;
+  const database = await openLibrary();
+  try {
+    const tx = database.transaction([BOOK_STORE, PDF_STORE], "readonly");
+    const key = `${ownerId}:${bookId}`;
+    const [metadata, file] = await Promise.all([
+      requestResult(tx.objectStore(BOOK_STORE).get(key)),
+      requestResult(tx.objectStore(PDF_STORE).get(key)),
+    ]);
+    return metadata?.ownerId === ownerId ? file?.pdf : undefined;
+  } finally { database.close(); }
+}
+
 export async function markBookOpened(ownerId: string, bookId: string) {
   const database = await openLibrary();
   try {
