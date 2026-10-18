@@ -19,6 +19,8 @@ export type BookSummary = {
   embeddingModel?: string;
   embeddingDimensions?: number;
   importedFrom?: string;
+  author?: string;
+  extraction?: { ocrPages: number; readablePages: number };
 };
 
 export type StoredBook = BookSummary & {
@@ -86,9 +88,9 @@ function openLibrary() {
 
 export function summary(book: BookSummary): BookSummary {
   const { id, name, pages, chapters, chunks, fileSize, storedAt, lastOpenedAt,
-    embeddingModel = "text-embedding-3-small", embeddingDimensions = 1536, importedFrom } = book;
+    embeddingModel = "text-embedding-3-small", embeddingDimensions = 1536, importedFrom, author, extraction } = book;
   return { id, name, pages, chapters, chunks, fileSize, storedAt, lastOpenedAt,
-    embeddingModel, embeddingDimensions, importedFrom };
+    embeddingModel, embeddingDimensions, importedFrom, author, extraction };
 }
 
 export async function fingerprintBook(file: File) {

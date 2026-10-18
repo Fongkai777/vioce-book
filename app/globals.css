@@ -93,6 +93,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .inspector-callout { display: flex; gap: 12px; padding: 16px 20px; background: #e7ede3; border-radius: 10px; font-size: 13px; line-height: 1.6; }
 .inspector-callout svg { flex-shrink: 0; margin-top: 2px; }
 .inspector-callout p { margin: 4px 0 0; color: var(--muted); }
+.readiness-warning { background: #f8e0d9; }
+.overview-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.overview-stats > div { padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.overview-stats strong { display: block; font: 26px/1.3 Georgia, serif; color: var(--forest); }
+.overview-stats span { display: block; color: var(--muted); font-size: 11px; margin-top: 6px; }
+.technical-details { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 18px; }
+.technical-details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.content-controls { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.content-controls > span { color: var(--muted); }
+.content-controls label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.content-controls input { accent-color: var(--forest); width: 16px; height: 16px; }
+.chunk-cards article.cited-passage { border-color: var(--forest); box-shadow: inset 3px 0 var(--forest); background: #edf1e8; }
+.chunk-cards article > .eyebrow { font: 700 10px/1.4 Arial, sans-serif; margin-top: 0; }
 .saved-book-text { white-space: pre-wrap; overflow-wrap: anywhere; font: 16px/1.85 Georgia, serif; max-width: 900px; margin: 0; }
 .chunk-filters { display: flex; gap: 12px; }
 .chunk-filters > label { flex: 1; min-width: 0; }

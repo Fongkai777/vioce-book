@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import "fake-indexeddb/auto";
 import { saveBook, getBook, getBookPdf, listBooks, deleteBook } from "../lib/book-library.ts";
-import { filterChunks, chunkPageLabel, indexStatistics } from "../lib/book-inspector.ts";
+import { filterChunks, chunkPageLabel, indexStatistics, bookReadiness, locatePassage } from "../lib/book-inspector.ts";
 
 const chunks = [
   { id: "first", sectionTitle: "Opening", pageStart: 1, pageEnd: 2, text: "The quiet READER 阅读", embedding: [0.3, 0.4] },
@@ -27,6 +27,33 @@ test("index statistics expose actual dimensions and invalid vectors, not fabrica
   const invalid = indexStatistics([...chunks, {...chunks[0], embedding: [NaN, 1]}, {...chunks[0], embedding: [1]}], 2);
   assert.equal(invalid.validVectors, 2); assert.deepEqual(invalid.dimensions, [2, 1]);
   assert.equal(indexStatistics([], 1536).validVectors, 0);
+});
+test("readiness rejects empty, zero, non-finite and mismatched vectors or empty text", () => {
+  assert.equal(bookReadiness(chunks, 2), true);
+  assert.equal(bookReadiness([], 2), false);
+  for (const embedding of [[0,0], [NaN,1], [1], [Infinity,1]]) {
+    assert.equal(bookReadiness([{...chunks[0],embedding}], 2), false);
+  }
+  assert.equal(bookReadiness([{...chunks[0],text:"  "}], 2), false);
+});
+test("citation targets locate the original passage on later pages without guessing a page", () => {
+  const many = Array.from({length:25}, (_,i)=>({...chunks[1],id:`p-${i}`}));
+  assert.deepEqual(locatePassage(many,"p-24"),{chunk:many[24],listPage:2});
+  assert.equal(locatePassage(many,"p-24").chunk.pageStart,0);
+  assert.equal(locatePassage(many,"missing"),undefined);
+  assert.equal(locatePassage(many,"p-11").listPage,0);
+  assert.equal(locatePassage(many,"p-12").listPage,1);
+});
+test("new extraction metadata survives lightweight summaries; legacy metadata is not invented", async () => {
+  const base = {id:"metadata",name:"Metadata",pages:5,chapters:1,chunks:2,fileSize:10,storedAt:"2026-01-01",lastOpenedAt:"2026-01-01",index:chunks};
+  await saveBook("metadata-owner",{...base,author:"PDF author",extraction:{ocrPages:2,readablePages:4}});
+  const [saved] = await listBooks("metadata-owner");
+  assert.equal(saved.author,"PDF author");
+  assert.deepEqual(saved.extraction,{ocrPages:2,readablePages:4});
+  assert.equal("index" in saved,false);
+  await saveBook("legacy-owner",base);
+  const [legacy] = await listBooks("legacy-owner");
+  assert.equal(legacy.extraction,undefined); assert.equal(legacy.author,undefined);
 });
 test("PDF preview reads only the selected account's original; chat/list reads stay lightweight", async () => {
   const book = { id: "shared-id", name: "Original", pages: 2, chapters: 2, chunks: 2, fileSize: 5, storedAt: "2026-01-01", lastOpenedAt: "2026-01-01", index: chunks, pdf: new Blob(["Alice PDF"], {type: "application/pdf"}) };

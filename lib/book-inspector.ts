@@ -23,3 +23,17 @@ export function chunkPageLabel(chunk: Pick<StoredChunk, "pageStart" | "pageEnd">
   if (!chunk.pageStart) return "Page unavailable";
   return chunk.pageStart === chunk.pageEnd ? `Page ${chunk.pageStart}` : `Pages ${chunk.pageStart}–${chunk.pageEnd}`;
 }
+
+export const PASSAGES_PER_PAGE = 12;
+export type PassageTarget = { bookId: string; chunkId: string; requestId: number };
+export function locatePassage(chunks: StoredChunk[], chunkId: string) {
+  const index = chunks.findIndex(chunk => chunk.id === chunkId);
+  if (index < 0) return undefined;
+  return { chunk: chunks[index], listPage: Math.floor(index / PASSAGES_PER_PAGE) };
+}
+
+export function bookReadiness(chunks: StoredChunk[], dimensions: number) {
+  return chunks.length > 0 && dimensions > 0 &&
+    indexStatistics(chunks, dimensions).validVectors === chunks.length &&
+    chunks.every(chunk => chunk.text.trim().length > 0 && chunk.embedding.some(value => value !== 0));
+}

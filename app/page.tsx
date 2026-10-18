@@ -20,6 +20,7 @@ import StartReading from "./start-reading";
 import SampleLibrary from "./sample-library";
 import { addSampleToLibrary } from "@/lib/sample-library";
 import BookManager from "./book-manager";
+import type { PassageTarget } from "@/lib/book-inspector";
 import VoiceSession from "./voice-session";
 import { VoiceCapture } from "@/lib/voice-capture";
 import { speechSegments, TurnGate } from "@/lib/voice-turn";
@@ -73,6 +74,7 @@ export default function Home() {
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [error, setError] = useState("");
   const [activeSource, setActiveSource] = useState<Source | null>(null);
+  const [passageTarget, setPassageTarget] = useState<PassageTarget>();
   const [voiceOn, setVoiceOn] = useState(false);
   const [voiceConnecting, setVoiceConnecting] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
@@ -184,6 +186,10 @@ export default function Home() {
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
     const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
     const pages: Array<{ pageNumber: number; text: string }> = [];
+    let ocrPages = 0;
+    const metadata = await document.getMetadata().catch(() => null);
+    const pdfAuthor = (metadata?.info as { Author?: unknown } | undefined)?.Author;
+    const author = typeof pdfAuthor === "string" ? pdfAuthor.trim().slice(0, 300) || undefined : undefined;
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
@@ -195,6 +201,7 @@ export default function Home() {
       }
       text = text.replace(/[ \t]+/g, " ").trim();
       if (text.length < 20) {
+        ocrPages++;
         const baseViewport = page.getViewport({ scale: 1 });
         const scale = Math.min(2.2, 1800 / Math.max(baseViewport.width, baseViewport.height));
         const viewport = page.getViewport({ scale });
@@ -221,7 +228,7 @@ export default function Home() {
       setProgress(Math.round((pageNumber / document.numPages) * 42));
     }
     await document.destroy();
-    return { pages, totalPages: document.numPages };
+    return { pages, totalPages: document.numPages, author, ocrPages };
   }
 
   async function embedTexts(texts: string[], model = "text-embedding-3-small", purpose = "index", signal?: AbortSignal) {
@@ -312,7 +319,7 @@ export default function Home() {
         return;
       }
       setStage("reading");
-      const { pages, totalPages } = await extractPages(file);
+      const { pages, totalPages, author, ocrPages } = await extractPages(file);
       const nonEmptyPages = pages.filter((page) => page.text.length > 20);
       if (!nonEmptyPages.length) throw new Error("No readable text was found, including after OCR.");
       setStage("indexing");
@@ -329,6 +336,8 @@ export default function Home() {
         chapters,
         chunks: indexed.length,
         fileSize: file.size,
+        author,
+        extraction: { ocrPages, readablePages: nonEmptyPages.length },
         storedAt: now,
         lastOpenedAt: now,
         pdf: file,
@@ -625,12 +634,12 @@ export default function Home() {
       </header>
 
       <nav className="workspace-tabs" role="tablist" aria-label="Workspace">
-        {([ ["chat", "Chat"], ["books", "Book management"] ] as const).map(([id, label]) => <button key={id} role="tab" id={`workspace-tab-${id}`} aria-controls={`workspace-panel-${id}`} aria-selected={workspaceTab === id} tabIndex={workspaceTab === id ? 0 : -1} disabled={bookTransitionBlocked} onClick={() => { setWorkspaceTab(id); setLibraryOpen(false); }} onKeyDown={event => {
-          if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "chat" : event.key === "End" ? "books" : id === "chat" ? "books" : "chat"; setWorkspaceTab(next); setLibraryOpen(false); document.getElementById(`workspace-tab-${next}`)?.focus(); }
+        {([ ["chat", "Chat"], ["books", "Book management"] ] as const).map(([id, label]) => <button key={id} role="tab" id={`workspace-tab-${id}`} aria-controls={`workspace-panel-${id}`} aria-selected={workspaceTab === id} tabIndex={workspaceTab === id ? 0 : -1} disabled={bookTransitionBlocked} onClick={() => { setPassageTarget(undefined); setWorkspaceTab(id); setLibraryOpen(false); }} onKeyDown={event => {
+          if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "chat" : event.key === "End" ? "books" : id === "chat" ? "books" : "chat"; setPassageTarget(undefined); setWorkspaceTab(next); setLibraryOpen(false); document.getElementById(`workspace-tab-${next}`)?.focus(); }
         }}>{id === "chat" ? <Headphones size={16} /> : <Library size={16} />}{label}</button>)}
       </nav>
       {workspaceTab === "books" && quota && <section role="tabpanel" id="workspace-panel-books" aria-labelledby="workspace-tab-books">
-        <BookManager key={quota.user.userId} ownerId={quota.user.userId} books={library} preferredBookId={book?.id} disabled={bookTransitionBlocked} onChat={openStoredBook} onRemove={removeLibraryBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} status={busy ? `${stageCopy[stage]} ${progress}%` : undefined} error={error} />
+        <BookManager key={quota.user.userId} ownerId={quota.user.userId} books={library} preferredBookId={book?.id} passageTarget={passageTarget} disabled={bookTransitionBlocked} onChat={openStoredBook} onRemove={removeLibraryBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} status={busy ? `${stageCopy[stage]} ${progress}%` : undefined} error={error} />
       </section>}
 
       {libraryOpen && <button className="library-backdrop" onClick={() => setLibraryOpen(false)} aria-label="Close library" />}
@@ -700,7 +709,11 @@ export default function Home() {
         </aside>
       </section>
 
-      {activeSource && <div className="source-drawer-backdrop" onClick={() => setActiveSource(null)}><article className="source-drawer" onClick={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setActiveSource(null)} aria-label="Close passage"><X size={18} /></button><p className="eyebrow">Source passage · {pageLabel(activeSource)}</p><h2>{activeSource.sectionTitle}</h2><blockquote>{activeSource.text}</blockquote></article></div>}
+      {activeSource && <div className="source-drawer-backdrop" onClick={() => setActiveSource(null)}><article className="source-drawer" onClick={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setActiveSource(null)} aria-label="Close passage"><X size={18} /></button><p className="eyebrow">Source passage · {pageLabel(activeSource)}</p><h2>{activeSource.sectionTitle}</h2><blockquote>{activeSource.text}</blockquote><div className="manager-actions"><button disabled={!book || bookTransitionBlocked} onClick={() => {
+        if (!book || bookTransitionBlocked) return;
+        setPassageTarget(previous => ({bookId: book.id, chunkId: activeSource.id, requestId: (previous?.requestId || 0) + 1}));
+        setActiveSource(null); setLibraryOpen(false); setWorkspaceTab("books");
+      }}><BookOpen size={15} /> View in book</button></div>{voiceOn && <p className="inspector-note">End voice mode to open book management.</p>}</article></div>}
       {sampleLibraryOpen && <SampleLibrary savedIds={library.map(book => book.id)} disabled={bookTransitionBlocked} loadingId={openingBookId} selectionError={sampleError} onSelect={id => openStoredBook(id, true)} onClose={() => setSampleLibraryOpen(false)} />}
     </main>
   );

@@ -68,8 +68,8 @@ export default function PdfPreview({ file, initialPage = 1 }: { file: Blob; init
     {error && <p role="alert" className="inspector-error">{error} <button onClick={() => setRetry(value => value + 1)}>Reload preview</button></p>}
     <div className="pdf-canvas-wrap" ref={container} aria-busy={loading || rendering}>
       {rendering && <span className="pdf-render-status" role="status">Rendering page…</span>}
-      <canvas ref={canvas} aria-label={`PDF page ${page}. Extracted text is available in the Chunks tab.`} style={{ visibility: document && !error && !rendering ? "visible" : "hidden" }} />
+      <canvas ref={canvas} aria-label={`PDF page ${page}. Choose Show passages for extracted text.`} style={{ visibility: document && !error && !rendering ? "visible" : "hidden" }} />
     </div>
-    <p className="inspector-note">Rendered locally, one page at a time. Use Chunks for searchable, selectable text.</p>
+    <p className="inspector-note">Rendered locally, one page at a time. Choose Show passages for searchable, selectable text.</p>
   </div>;
 }
