@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, BookOpen, FileText, Headphones,
-  Library, LoaderCircle, LogOut, Mic, Pause, Play, Plus, ShieldCheck, Sparkles,
+  Library, LoaderCircle, LogOut, Mic, Play, Plus, ShieldCheck, Sparkles,
   Square, Trash2, Upload, UserRound, Volume2, X,
 } from "lucide-react";
 import {
@@ -20,11 +20,14 @@ import StartReading from "./start-reading";
 import SampleLibrary from "./sample-library";
 import { addSampleToLibrary } from "@/lib/sample-library";
 import BookManager from "./book-manager";
+import VoiceSession from "./voice-session";
+import { VoiceCapture } from "@/lib/voice-capture";
+import { speechSegments, TurnGate } from "@/lib/voice-turn";
 
-type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
+type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "reviewing" | "voicing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
 type Source = Pick<Chunk, "id" | "sectionTitle" | "pageStart" | "pageEnd" | "text">;
-type Exchange = { id: string; question: string; answer: string; sources: Source[] };
+type Exchange = { id: string; question: string; answer: string; sources: Source[]; audioInterrupted?: boolean };
 type QuotaSnapshot = {
   questions: { used: number; limit: number; remaining: number };
   voice: { usedSeconds: number; limitSeconds: number; remainingSeconds: number };
@@ -35,7 +38,8 @@ type QuotaSnapshot = {
 const stageCopy: Record<Stage, string> = {
   idle: "Choose or upload a book to begin", reading: "Reading pages and using OCR when needed…",
   indexing: "Building the book index…", ready: "Ready for your question",
-  listening: "Listening… tap to finish", transcribing: "Turning speech into text…",
+  listening: "Listening… pause to finish", transcribing: "Turning speech into text…",
+  reviewing: "Review your transcript", voicing: "Preparing the spoken reply…",
   retrieving: "Finding the best passages…", answering: "Composing a grounded answer…",
   remembering: "整理较早对话，保留完整原始记录…",
   speaking: "Playing the answer", error: "Something needs attention",
@@ -69,7 +73,15 @@ export default function Home() {
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [error, setError] = useState("");
   const [activeSource, setActiveSource] = useState<Source | null>(null);
-  const [isAudioPaused, setIsAudioPaused] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [voiceConnecting, setVoiceConnecting] = useState(false);
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
+  const [transcript, setTranscript] = useState("");
+  const [editingTranscript, setEditingTranscript] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState("");
+  const [voiceNotice, setVoiceNotice] = useState("");
+  const [replayAvailable, setReplayAvailable] = useState(false);
   const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
@@ -77,23 +89,39 @@ export default function Home() {
   const summaries = useRef<SummaryCache>({});
   const [contextNote, setContextNote] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
-  const mediaRecorder = useRef<MediaRecorder | null>(null);
-  const audioParts = useRef<Blob[]>([]);
-  const audioPlayer = useRef<HTMLAudioElement | null>(null);
+  const audioContext = useRef<AudioContext | null>(null);
+  const audioPlayer = useRef<AudioBufferSourceNode | null>(null);
+  const capture = useRef<VoiceCapture | null>(null);
+  const turnGate = useRef(new TurnGate());
+  const transcriptionGate = useRef(new TurnGate());
+  const transcriptionQueue = useRef<Promise<void>>(Promise.resolve());
+  const queuedTranscriptions = useRef(0);
+  const voiceGeneration = useRef(0);
+  const transcriptRef = useRef("");
+  const continuedTranscript = useRef("");
+  const reviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replay = useRef<{ buffers: AudioBuffer[]; exchangeId: string } | null>(null);
+  const playingExchange = useRef<string | null>(null);
+  const exchangesRef = useRef<Exchange[]>([]);
+  exchangesRef.current = exchanges;
+  const actions = useRef({ speechStart: () => {}, utterance: (_file: File, _seconds: number) => {}, stopped: (_reason: string) => {}, sendTranscript: () => {} });
   const conversationEnd = useRef<HTMLDivElement>(null);
-  const recordingDurationSeconds = useRef(0);
-  const recordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const busy = !["idle", "ready", "error", "listening", "speaking"].includes(stage);
-  const bookTransitionBlocked = !preferencesReady || !!openingBookId || !["idle", "ready", "error", "speaking"].includes(stage);
+  const busy = !["idle", "ready", "error", "listening", "reviewing", "speaking"].includes(stage);
+  const bookTransitionBlocked = voiceOn || voiceConnecting || !preferencesReady || !!openingBookId || !["idle", "ready", "error", "speaking"].includes(stage);
   const latest = exchanges.at(-1);
   const currentSources = latest?.sources || [];
 
   useEffect(() => { conversationEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [exchanges, stage]);
   useEffect(() => () => {
-    audioPlayer.current?.pause();
-    mediaRecorder.current?.stream.getTracks().forEach((track) => track.stop());
-    if (recordingTimer.current) clearTimeout(recordingTimer.current);
+    voiceGeneration.current++; turnGate.current.cancel(); transcriptionGate.current.cancel(); capture.current?.stop();
+    if (reviewTimer.current) clearTimeout(reviewTimer.current);
+    void audioContext.current?.close();
+  }, []);
+  useEffect(() => {
+    const leave = () => { if (document.hidden) actions.current.stopped("Voice mode ended because this tab is no longer visible."); };
+    document.addEventListener("visibilitychange", leave);
+    return () => document.removeEventListener("visibilitychange", leave);
   }, []);
 
   useEffect(() => {
@@ -197,15 +225,16 @@ export default function Home() {
     return { pages, totalPages: document.numPages };
   }
 
-  async function embedTexts(texts: string[], model = "text-embedding-3-small", purpose = "index") {
+  async function embedTexts(texts: string[], model = "text-embedding-3-small", purpose = "index", signal?: AbortSignal) {
     const vectors: number[][] = [];
     const batchSize = 48;
     for (let index = 0; index < texts.length; index += batchSize) {
       const response = await fetch("/api/embed", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", signal, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ texts: texts.slice(index, index + batchSize), model, purpose }),
       });
       const payload = await response.json() as { error?: string; embeddings: number[][] };
+      signal?.throwIfAborted();
       if (!response.ok) throw new Error(payload.error || "Embedding failed");
       vectors.push(...payload.embeddings);
       setProgress(45 + Math.round((Math.min(index + batchSize, texts.length) / texts.length) * 55));
@@ -223,6 +252,7 @@ export default function Home() {
     try {
       setOpeningBookId(bookId);
       setSampleError("");
+      turnGate.current.cancel(); clearTranscript(); setPendingQuestion(""); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
       stopAudio();
       setError("");
       const stored = fromSample ? await addSampleToLibrary(ownerId, bookId) : await getBook(ownerId, bookId);
@@ -320,131 +350,243 @@ export default function Home() {
 
   async function ask(rawQuestion: string, revision = "", original?: Exchange) {
     const cleanQuestion = rawQuestion.trim();
-    if (!cleanQuestion || !chunks.length || busy || openingBookId || !preferencesReady) return;
+    if (!cleanQuestion || !chunks.length || openingBookId || !preferencesReady) return;
+    interruptReply();
+    const signal = turnGate.current.next();
+    const history = exchangesRef.current;
+    const owner = quota?.user.userId, bookId = book?.id;
+    clearTranscript(); stopAudio(); setPendingQuestion(cleanQuestion); setVoiceNotice("");
+    void prepareAudio().catch(() => {});
     try {
       stopAudio(); setQuestion(""); setError(""); setStage("retrieving");
-      const conversation = await buildConversationContext(cleanQuestion, exchanges, summaries.current, async text => {
+      const conversation = await buildConversationContext(cleanQuestion, history, summaries.current, async text => {
+        signal.throwIfAborted();
         setStage("remembering");
-        const response = await fetch("/api/history/summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+        const response = await fetch("/api/history/summary", { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
         const data = await response.json() as { summary: string; error?: string };
+        signal.throwIfAborted();
         if (!response.ok) throw new Error(data.error || "对话摘要失败，请重试；原始记录仍然保留。");
         return data.summary;
       }, async () => {
-        if (preferences.rememberHistory && quota && book) await saveHistory(quota.user.userId, book.id, exchanges, summaries.current);
+        signal.throwIfAborted();
+        if (preferences.rememberHistory && owner && bookId) await saveHistory(owner, bookId, history, summaries.current);
       });
+      signal.throwIfAborted();
       setContextNote(conversation.mode === "full" ? `本次参考全部 ${conversation.totalTurns} 轮前文` : `本次参考早期摘要、${conversation.turns.length} 轮近期原文及 ${conversation.recalled.length} 段相关历史`);
       setStage("retrieving");
-      const query = retrievalQuestion(cleanQuestion, exchanges);
-      const [queryEmbedding] = await embedTexts([query], book?.embeddingModel, "query"); setProgress(100);
+      const query = retrievalQuestion(cleanQuestion, history);
+      const [queryEmbedding] = await embedTexts([query], book?.embeddingModel, "query", signal); signal.throwIfAborted(); setProgress(100);
       if (chunks.some((chunk) => chunk.embedding.length !== queryEmbedding.length)) {
         throw new Error("The question vector does not match this book's saved index.");
       }
       const retrieved = hybridRetrieve(query, queryEmbedding, chunks, 6) as Chunk[];
       setStage("answering");
       const response = await fetch("/api/answer", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", signal, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: cleanQuestion, conversation, revision, revisionAnswer: original?.answer, contexts: retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text })) }),
       });
       const payload = await response.json() as { error?: string; answer: string; quota?: QuotaSnapshot };
+      signal.throwIfAborted();
       if (!response.ok) throw new Error(payload.error || "Answer generation failed");
       if (payload.quota) setQuota(payload.quota);
       const sources = retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text }));
-      const next = [...exchanges, { id: crypto.randomUUID(), question: cleanQuestion, answer: payload.answer, sources }];
-      setExchanges(next);
-      if (preferences.rememberHistory && quota && book) {
-        try { await saveHistory(quota.user.userId, book.id, next, summaries.current); } catch { setError("回答已生成，但本机存储失败，历史未能保存；请勿关闭页面。"); }
+      const exchangeId = crypto.randomUUID();
+      const next = [...history, { id: exchangeId, question: cleanQuestion, answer: payload.answer, sources }];
+      exchangesRef.current = next; setExchanges(next); setPendingQuestion("");
+      if (preferences.rememberHistory && owner && bookId) {
+        try { await saveHistory(owner, bookId, next, summaries.current); } catch { if (!signal.aborted) setError("回答已生成，但本机存储失败，历史未能保存；请勿关闭页面。"); }
       }
+      signal.throwIfAborted();
       const spokenAnswer = String(payload.answer).replace(/\[S\d+\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
-      await speak(spokenAnswer);
+      await speak(spokenAnswer, signal, exchangeId);
     } catch (caught) {
+      if (signal.aborted) return;
+      setPendingQuestion("");
       setQuestion(cleanQuestion); setError(caught instanceof Error ? caught.message : "The question could not be answered."); setStage("error");
     }
   }
 
+  async function prepareAudio() {
+    if (!audioContext.current || audioContext.current.state === "closed") audioContext.current = new AudioContext();
+    if (audioContext.current.state === "suspended") await audioContext.current.resume();
+    return audioContext.current;
+  }
+
+  function clearTranscript() {
+    if (reviewTimer.current) clearTimeout(reviewTimer.current);
+    reviewTimer.current = null; transcriptRef.current = ""; setTranscript(""); setEditingTranscript(false);
+  }
+
+  function markAudioInterrupted() {
+    const id = playingExchange.current; playingExchange.current = null;
+    if (!id) return;
+    const updated = exchangesRef.current.map(turn => turn.id === id ? { ...turn, audioInterrupted: true } : turn);
+    exchangesRef.current = updated; setExchanges(updated);
+    if (preferences.rememberHistory && quota && book) void saveHistory(quota.user.userId, book.id, updated, summaries.current).catch(() => setVoiceNotice("Playback stopped, but its status could not be saved."));
+  }
+
+  function interruptReply(keepIncoming = false) {
+    if (!keepIncoming) {
+      transcriptionGate.current.next(); transcriptionQueue.current = Promise.resolve();
+      queuedTranscriptions.current = 0; continuedTranscript.current = "";
+    }
+    turnGate.current.cancel(); markAudioInterrupted(); stopAudio(); clearTranscript(); setPendingQuestion("");
+    setStage(book ? "ready" : "idle");
+  }
+
+  function endVoice(reason = "") {
+    voiceGeneration.current++; capture.current?.stop(); capture.current = null;
+    if (transcriptRef.current) setQuestion(transcriptRef.current);
+    interruptReply(); setVoiceOn(false); setVoiceConnecting(false); setVoiceMuted(false); setVoiceLevel(0);
+    continuedTranscript.current = "";
+    if (reason) setVoiceNotice(reason);
+  }
+
   async function startRecording() {
-    if (!book || !preferencesReady || openingBookId) return;
-    if (stage === "listening") return stopRecording();
-    if (busy) return;
+    if (capture.current || voiceConnecting) return endVoice();
+    if (!book || !preferencesReady || openingBookId || ["reading", "indexing"].includes(stage)) return;
+    if (quota && (quota.voice.remainingSeconds < 1 || quota.questions.remaining < 1)) { setError("Your daily voice or question allowance has been reached."); return; }
+    interruptReply(); setError(""); setVoiceNotice(""); setVoiceConnecting(true);
+    const generation = ++voiceGeneration.current;
     try {
-      stopAudio();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferred = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type));
-      const recorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined);
-      audioParts.current = [];
-      recorder.ondataavailable = (event) => event.data.size && audioParts.current.push(event.data);
-      recorder.onstop = async () => {
-        if (recordingTimer.current) clearTimeout(recordingTimer.current);
-        stream.getTracks().forEach((track) => track.stop());
-        const mimeType = recorder.mimeType || "audio/webm";
-        const extension = mimeType.includes("mp4") ? "m4a" : "webm";
-        const durationSeconds = Math.max(1, Math.min(60, recordingDurationSeconds.current));
-        await transcribe(new File(audioParts.current, `question.${extension}`, { type: mimeType }), durationSeconds);
-      };
-      mediaRecorder.current = recorder;
-      recordingDurationSeconds.current = 0;
-      recorder.start();
-      recordingTimer.current = setInterval(() => {
-        recordingDurationSeconds.current += 1;
-        if (recordingDurationSeconds.current >= 60) stopRecording();
-      }, 1_000);
-      setStage("listening");
-    } catch {
-      setError("Microphone access was denied. You can still type a question below."); setStage("error");
+      const context = await prepareAudio();
+      const session = await VoiceCapture.open(context, {
+        level: level => { if (generation === voiceGeneration.current) setVoiceLevel(level); },
+        playback: () => !!audioPlayer.current,
+        start: () => { if (generation === voiceGeneration.current) actions.current.speechStart(); },
+        utterance: (file, seconds) => { if (generation === voiceGeneration.current) actions.current.utterance(file, seconds); },
+        stopped: reason => { if (generation === voiceGeneration.current) actions.current.stopped(reason); },
+      });
+      if (generation !== voiceGeneration.current) { session.stop(); return; }
+      capture.current = session; setVoiceOn(true); setVoiceConnecting(false); setVoiceMuted(false); setStage("ready");
+    } catch (caught) {
+      if (generation !== voiceGeneration.current) return;
+      setVoiceConnecting(false); setError(caught instanceof Error && caught.name !== "NotAllowedError" ? caught.message : "Microphone access was denied. Allow it in your browser settings, or type a question."); setStage("error");
     }
   }
 
-  function stopRecording() {
-    if (recordingTimer.current) clearTimeout(recordingTimer.current);
-    if (mediaRecorder.current?.state === "recording") mediaRecorder.current.stop();
+  function muteVoice() {
+    if (transcriptRef.current && !voiceMuted) editTranscript();
+    else { capture.current?.mute(!voiceMuted); setVoiceMuted(!voiceMuted); if (stage === "listening") setStage("ready"); }
   }
 
-  async function transcribe(audio: File, durationSeconds: number) {
+  function editTranscript() {
+    if (reviewTimer.current) clearTimeout(reviewTimer.current);
+    reviewTimer.current = null; setEditingTranscript(true); capture.current?.mute(true); setVoiceMuted(true);
+  }
+
+  function sendTranscript() {
+    const text = transcriptRef.current.trim(); if (!text) return;
+    capture.current?.mute(false); setVoiceMuted(false); void ask(text);
+  }
+
+  function discardTranscript() {
+    interruptReply();
+    capture.current?.mute(false); setVoiceMuted(false); setStage("ready");
+  }
+
+  actions.current = {
+    speechStart: () => {
+      interruptReply(true); setError(""); setVoiceNotice(""); setStage("listening");
+    },
+    utterance: (file, seconds) => {
+      const signal = transcriptionGate.current.signal;
+      queuedTranscriptions.current++; setStage("transcribing");
+      transcriptionQueue.current = transcriptionQueue.current.then(() => transcribe(file, seconds, signal)).finally(() => {
+        if (signal.aborted) return;
+        queuedTranscriptions.current--;
+        if (!queuedTranscriptions.current && !capture.current?.speaking && continuedTranscript.current) {
+          const text = continuedTranscript.current;
+          transcriptRef.current = text; setTranscript(text); setEditingTranscript(false); setStage("reviewing");
+          reviewTimer.current = setTimeout(() => { if (!signal.aborted) actions.current.sendTranscript(); }, 1800);
+        }
+      });
+    },
+    stopped: reason => { if (capture.current || voiceConnecting) endVoice(reason); },
+    sendTranscript,
+  };
+
+  async function transcribe(audio: File, durationSeconds: number, signal: AbortSignal) {
     try {
-      setStage("transcribing");
+      signal.throwIfAborted();
       const form = new FormData(); form.append("audio", audio); form.append("durationSeconds", String(durationSeconds));
-      const response = await fetch("/api/transcribe", { method: "POST", body: form });
+      const response = await fetch("/api/transcribe", { method: "POST", signal, body: form });
       const payload = await response.json() as { error?: string; text: string; quota?: QuotaSnapshot };
+      signal.throwIfAborted();
       if (!response.ok) throw new Error(payload.error || "Transcription failed");
       if (payload.quota) setQuota(payload.quota);
       if (!payload.text) throw new Error("No speech was detected. Please try again closer to the microphone.");
-      setQuestion(payload.text); await ask(payload.text);
+      continuedTranscript.current = [continuedTranscript.current, payload.text].filter(Boolean).join(" ").slice(0, 2000);
+      if (payload.quota && payload.quota.voice.remainingSeconds < 1) { capture.current?.stop(); capture.current = null; setVoiceOn(false); setVoiceNotice("Voice allowance reached. You can review this transcript and continue by typing."); }
     } catch (caught) {
+      if (signal.aborted) return;
+      continuedTranscript.current = "";
+      capture.current?.mute(true); setVoiceMuted(true);
       setError(caught instanceof Error ? caught.message : "Speech could not be transcribed."); setStage("error");
     }
   }
 
-  async function speak(text: string) {
-    setStage("speaking");
-    const response = await fetch("/api/speech", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+  async function playBuffer(buffer: AudioBuffer, context: AudioContext, signal: AbortSignal) {
+    signal.throwIfAborted();
+    if (context.state !== "running") throw new Error("Audio playback is paused by your browser. Tap Play saved audio to listen.");
+    await new Promise<void>((resolve, reject) => {
+      const player = context.createBufferSource(); player.buffer = buffer; player.connect(context.destination);
+      const cleanup = () => { signal.removeEventListener("abort", abort); player.disconnect(); if (audioPlayer.current === player) audioPlayer.current = null; };
+      const abort = () => { player.onended = null; try { player.stop(); } catch {} cleanup(); reject(new DOMException("Cancelled", "AbortError")); };
+      player.onended = () => { cleanup(); resolve(); };
+      signal.addEventListener("abort", abort, { once: true }); audioPlayer.current = player;
+      try { player.start(); } catch (error) { cleanup(); reject(error); }
     });
-    if (!response.ok) { const payload = await response.json() as { error?: string }; throw new Error(payload.error || "Speech generation failed"); }
-    const url = URL.createObjectURL(await response.blob());
-    const player = new Audio(url);
-    player.onended = () => { URL.revokeObjectURL(url); setIsAudioPaused(false); setStage("ready"); };
-    player.onerror = () => { URL.revokeObjectURL(url); setStage("ready"); };
-    audioPlayer.current = player; await player.play();
+  }
+
+  async function speak(text: string, signal: AbortSignal, exchangeId: string) {
+    setStage("voicing"); playingExchange.current = exchangeId; replay.current = { buffers: [], exchangeId }; setReplayAvailable(false);
+    const saved = replay.current;
+    try {
+      const context = audioContext.current || await prepareAudio();
+      const jobs = speechSegments(text).map(async (segment, index) => {
+        try {
+          const response = await fetch("/api/speech", { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: segment }) });
+          if (!response.ok) { const payload = await response.json() as { error?: string }; throw new Error(payload.error || "Speech generation failed"); }
+          const buffer = await context.decodeAudioData(await response.arrayBuffer()); signal.throwIfAborted();
+          saved.buffers[index] = buffer; setReplayAvailable(true);
+          return { buffer };
+        } catch (error) { return { error }; }
+      });
+      for (const job of jobs) {
+        const result = await job; signal.throwIfAborted();
+        if (!result.buffer) throw result.error;
+        setStage("speaking"); await playBuffer(result.buffer, context, signal);
+      }
+      signal.throwIfAborted(); playingExchange.current = null; setStage("ready");
+    } catch (caught) {
+      if (signal.aborted) return;
+      playingExchange.current = null; setStage("ready");
+      setVoiceNotice(caught instanceof Error ? `The answer is ready. ${caught.message}` : "The answer is ready, but audio is unavailable. You can read it above.");
+    }
   }
 
   function stopAudio() {
-    if (audioPlayer.current) { audioPlayer.current.pause(); audioPlayer.current = null; }
-    setIsAudioPaused(false);
+    if (audioPlayer.current) { try { audioPlayer.current.stop(); } catch {} audioPlayer.current = null; }
   }
 
-  function toggleAudio() {
-    const player = audioPlayer.current; if (!player) return;
-    if (player.paused) { void player.play(); setIsAudioPaused(false); }
-    else { player.pause(); setIsAudioPaused(true); }
+  async function replayAudio() {
+    const saved = replay.current; if (!saved?.buffers.length) return;
+    interruptReply(); const signal = turnGate.current.next(); playingExchange.current = saved.exchangeId;
+    try { const context = await prepareAudio(); signal.throwIfAborted(); setStage("speaking"); for (const buffer of saved.buffers.filter(Boolean)) await playBuffer(buffer, context, signal); signal.throwIfAborted(); playingExchange.current = null; setStage("ready"); }
+    catch { if (!signal.aborted) { playingExchange.current = null; setStage("ready"); setVoiceNotice("Your browser could not play the audio. The text answer is still available."); } }
   }
 
   function resetBook() {
     if (bookTransitionBlocked) return;
+    turnGate.current.cancel(); clearTranscript(); setPendingQuestion(""); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
     summaries.current = {}; setContextNote("");
     stopAudio(); setBook(null); setChunks([]); setExchanges([]); setQuestion("");
     setActiveSource(null); setError(""); setProgress(0); setStage("idle");
   }
 
   async function logout() {
+    endVoice();
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.replace("/login");
   }
@@ -502,7 +644,7 @@ export default function Home() {
             <ReaderSettings preferences={preferences} onSave={savePreferences} onClear={clearReadingHistory} disabled={!preferencesReady || bookTransitionBlocked} />
           </div>
           <div className="conversation-scroll">
-            {!book ? <StartReading books={library} disabled={bookTransitionBlocked} openingBookId={openingBookId} onSelect={openStoredBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} /> : exchanges.length === 0 ? <div className="ready-state">
+            {!book ? <StartReading books={library} disabled={bookTransitionBlocked} openingBookId={openingBookId} onSelect={openStoredBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} /> : exchanges.length === 0 && !pendingQuestion ? <div className="ready-state">
               <div className="orb-small"><Headphones size={28} /></div><p className="eyebrow">The book is listening</p><h2>What would you like to understand?</h2>
               <p>Ask about an argument, event, character, definition, or connection across chapters.</p>
               <div className="sample-grid">{sampleQuestions.map((sample) => <button key={sample} onClick={() => void ask(sample)}>{sample}<ArrowUp size={13} /></button>)}</div>
@@ -510,6 +652,7 @@ export default function Home() {
               <div className="question-row"><span>You asked</span><p>{exchange.question}</p></div>
               <div className="answer-row"><div className="answer-label"><span className="mini-mark"><Volume2 size={13} /></span> Voicebook</div>
                 <AnswerText text={exchange.answer} onCitation={(index) => setActiveSource(exchange.sources[index] || null)} />
+                {exchange.audioInterrupted && <small className="playback-note">Voice reply interrupted · Full text kept above</small>}
                 <div className="source-strip">{exchange.sources.slice(0, 4).map((source, index) => <button key={source.id} onClick={() => setActiveSource(source)}><b>{index + 1}</b>{pageLabel(source)} · {source.sectionTitle}</button>)}</div>
                 <AnswerFeedback exchange={exchange} bookName={book?.name || ""} disabled={bookTransitionBlocked || !preferencesReady} onRewrite={instruction => void ask(exchange.question, instruction, exchange)} onRemember={async instruction => {
                   const guidance = [preferences.guidance, instruction].filter(Boolean).join("\n");
@@ -518,17 +661,23 @@ export default function Home() {
                 }} />
               </div>
             </article>)}</div>}
+            {pendingQuestion && <div className="question-row pending-question"><span>You asked</span><p>{pendingQuestion}</p></div>}
             {busy && <div className="thinking-card"><LoaderCircle className="spin" size={18} /><div><strong>{stageCopy[stage]}</strong><span>{stage === "retrieving" ? "Combining semantic and exact-match signals" : "This usually takes a few seconds"}</span></div></div>}
             {error && <div className="error-card"><X size={17} /><span>{error}</span><button onClick={() => { setError(""); setStage(book ? "ready" : "idle"); }}>Dismiss</button></div>}
             <div ref={conversationEnd} />
           </div>
 
           <div className="composer-wrap">
+            <VoiceSession active={voiceOn} connecting={voiceConnecting} level={voiceLevel} state={stage} muted={voiceMuted} transcript={transcript} editing={editingTranscript}
+              onEdit={editTranscript} onChange={text => { transcriptRef.current = text; setTranscript(text); }} onSend={sendTranscript} onDismiss={discardTranscript}
+              onMute={muteVoice} onFinish={() => capture.current?.finish()} onEnd={() => endVoice()} />
+            {voiceNotice && <p className="voice-notice" role="status">{voiceNotice}</p>}
+            <div className="voice-toolbar">{book && !voiceOn && !voiceConnecting && <span>Start voice to talk hands-free</span>}{replayAvailable && ["ready", "error"].includes(stage) && <button onClick={() => void replayAudio()}><Play size={13} /> Play saved audio</button>}</div>
             {(stage === "reading" || stage === "indexing") && <div className="progress-block"><span style={{ width: `${progress}%` }} /><p>{stageCopy[stage]} <b>{progress}%</b></p></div>}
             <div className={`voice-composer ${stage === "listening" ? "is-listening" : ""}`}>
-              <button className="mic-button" onClick={() => void startRecording()} disabled={!book || busy || !preferencesReady || !!openingBookId} aria-label={stage === "listening" ? "Stop recording" : "Ask with microphone"} title={!book ? "Choose or upload a book before asking by voice" : undefined}>{stage === "listening" ? <Square size={19} fill="currentColor" /> : <Mic size={22} />}{stage === "listening" && <span className="pulse-ring" />}</button>
+              <button className="mic-button" onClick={() => void startRecording()} disabled={!book || ["reading", "indexing"].includes(stage) || !preferencesReady || !!openingBookId} aria-label={voiceOn || voiceConnecting ? "End voice conversation" : "Start voice conversation"} aria-pressed={voiceOn} title={!book ? "Choose or upload a book before asking by voice" : "Start or end hands-free voice"}>{voiceOn || voiceConnecting ? <Square size={19} fill="currentColor" /> : <Mic size={22} />}</button>
               <form onSubmit={(event) => { event.preventDefault(); void ask(question); }}><label htmlFor="question">{stage === "listening" ? "Listening to your question…" : stageCopy[stage]}</label><input id="question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={book ? "Or type a question…" : "Choose or upload a book first"} disabled={!book || busy || stage === "listening"} /></form>
-              {stage === "speaking" ? <button className="send-button audio-control" onClick={toggleAudio} aria-label={isAudioPaused ? "Resume audio" : "Pause audio"}>{isAudioPaused ? <Play size={17} fill="currentColor" /> : <Pause size={17} fill="currentColor" />}</button> : <button className="send-button" onClick={() => void ask(question)} disabled={!question.trim() || !book || busy} aria-label="Send question"><ArrowUp size={18} /></button>}
+              {["speaking", "voicing", "answering", "retrieving", "remembering", "transcribing"].includes(stage) ? <button className="send-button audio-control" onClick={() => interruptReply()} aria-label="Stop reply"><Square size={17} fill="currentColor" /></button> : <button className="send-button" onClick={() => void ask(question)} disabled={!question.trim() || !book || busy || stage === "listening"} aria-label="Send question"><ArrowUp size={18} /></button>}
             </div>
             <p className="ai-disclosure">{contextNote || "短对话参考全部前文；长对话使用摘要并找回相关原始消息。"}<br />{preferences.rememberHistory ? `本机完整保留 ${exchanges.length} 轮对话` : "当前未开启跨会话保存"} · 回答和语音由 AI 生成，请核对原文引用。</p>
           </div>

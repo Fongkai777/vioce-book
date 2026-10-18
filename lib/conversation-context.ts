@@ -18,7 +18,7 @@ export const bytes = (text: string) => new TextEncoder().encode(text).length;
 export function normalizeHistory(value: unknown): HistoryTurn[] {
   if (!Array.isArray(value)) return [];
   return value.filter(x => x && typeof x.question === "string" && typeof x.answer === "string")
-    .map(x => ({ question: x.question, answer: x.answer.replace(/\[S\d+\]/g, "") }));
+    .map(x => ({ question: x.question, answer: x.answer.replace(/\[S\d+\]/g, "") + (x.audioInterrupted === true ? "\n[Playback note: the voice reply was interrupted. Full text was displayed, but do not assume the reader heard all of it.]" : "") }));
 }
 export function splitText(text: string, limit: number): string[] {
   const parts: string[] = []; let part = "", size = 0;

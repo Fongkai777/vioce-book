@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       method: "POST",
       headers: { ...authHeaders(apiKey), "Content-Type": "application/json" },
       body: JSON.stringify({ model, input: texts, encoding_format: "float", ...(legacy ? { dimensions: 1024 } : {}) }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]),
     });
     if (!upstream.ok) throw await openAIError(upstream);
     const payload = (await upstream.json()) as { data: Array<{ embedding: number[]; index: number }> };

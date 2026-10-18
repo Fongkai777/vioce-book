@@ -10,6 +10,7 @@ export async function POST(request: Request) {
     await consumeQuota(user, "speech", text.length);
     const config = getOpenAIConfig();
     const upstream = await fetch(`${config.baseUrl}/audio/speech`, {
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(90_000)]),
       method: "POST",
       headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -433,4 +433,26 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .admin-feedback-card small { display:block; color:var(--muted); margin-top:5px; }
 .admin-feedback-card p, .admin-feedback-card blockquote { white-space:pre-wrap; line-height:1.7; font-size:14px; margin:12px 0; }
 .admin-feedback-card details { margin-top:12px; color:var(--muted); font-size:12px; }
+.voice-session-card { border:1px solid #c5d7cc; border-radius:16px; background:#f1f6ef; padding:14px 16px; margin-bottom:10px; max-height:40dvh; overflow:auto; }
+.voice-session-top { display:flex; align-items:center; gap:8px; }
+.voice-session-top strong { font-size:13px; flex:1; }
+.voice-session-top > button { display:grid; place-items:center; background:none; border:0; padding:5px; color:var(--muted); }
+.voice-status-dot { width:8px; height:8px; border-radius:50%; background:#307956; flex-shrink:0; }
+.voice-status-dot.muted { background:#8b938e; }
+.voice-waveform { height:34px; display:flex; gap:2px; align-items:center; width:138px; overflow:hidden; }
+.voice-waveform i { display:block; width:3px; flex-shrink:0; border-radius:2px; background:#387d5d; transition:height 80ms linear; }
+.voice-session-card > p, .voice-transcript small { color:var(--muted); font-size:11px; line-height:1.6; margin:8px 0; display:block; }
+.voice-session-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.voice-session-actions button, .voice-toolbar button { display:inline-flex; gap:5px; align-items:center; border:1px solid #c6d5ca; border-radius:7px; padding:7px 9px; background:#fffdf8; font-size:11px; color:var(--green); }
+.voice-transcript { border-top:1px solid #d1dfd4; padding-top:12px; margin-top:12px; }
+.voice-transcript label { font-size:10px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); }
+.voice-transcript p { font-size:16px; line-height:1.5; margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.voice-transcript textarea { width:100%; min-height:72px; max-height:130px; padding:9px; margin-top:8px; border:1px solid #b4c7ba; border-radius:8px; background:white; font:inherit; resize:vertical; }
+.voice-notice { font-size:12px; line-height:1.5; color:var(--muted); margin:5px 0 10px; }
+.voice-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 4px 8px; font-size:11px; color:var(--muted); }
+.voice-toolbar:empty { display:none; }
+.playback-note { display:block; color:var(--muted); font-size:11px; margin-top:10px; }
+.pending-question { margin:15px 0 15px auto; }
+@media(max-width:700px) { .voice-waveform { width:70px; } .voice-session-card { padding:10px 12px; } .voice-session-top strong { font-size:12px; } }
+@media(prefers-reduced-motion:reduce) { .voice-waveform i { transition:none; } }
 @media(max-width:700px) { .reading-header { padding:14px 18px; gap:8px; } .reading-title strong { font-size:13px; } .reading-title small { font-size:10px; } .reader-settings { padding:24px; } }

@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     }).join("\n\n");
     const config = getOpenAIConfig();
     const upstream = await fetch(`${config.baseUrl}/responses`, {
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]),
       method: "POST",
       headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
       body: JSON.stringify({

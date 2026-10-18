@@ -22,6 +22,7 @@ export async function POST(request: Request) {
     form.append("response_format", "json");
     form.append("prompt", "Transcribe the reader's question accurately. Preserve book titles, names, and technical terms.");
     const upstream = await fetch(`${config.baseUrl}/audio/transcriptions`, {
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(90_000)]),
       method: "POST",
       headers: authHeaders(config.apiKey),
       body: form,

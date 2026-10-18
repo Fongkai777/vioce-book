@@ -100,6 +100,20 @@ This version deliberately keeps each uploaded PDF and its vector index in that b
 
 ## Reference projects
 
+### Hands-free voice conversation
+
+Select a book and press **Start voice conversation** once. An AudioWorklet measures microphone input locally and displays its real level. Sustained speech starts a turn; approximately 1.1 seconds of silence ends it (or use **Done speaking**). A 450 ms pre-roll preserves the beginning; turns are capped at 58 seconds and sent as mono 16 kHz WAV to the existing authenticated transcription route.
+
+The **You said** card shows the transcription before answering. It automatically submits after 1.8 seconds; **Edit transcript** pauses the microphone and automatic submission until **Send now** or **Cancel**. Speaking again extends the draft; queued transcription preserves both parts even when the first request is still running. Transcription is turn-based, not live word-by-word streaming.
+
+Answers retain the existing book retrieval, citations, preferences, history and quotas. Spoken output starts automatically, with a short first phrase and one prefetched remainder for longer answers. Speaking during playback interrupts it; **Stop reply** also cancels pending work. Abort signals and stale-result checks prevent cancelled replies/audio from resurfacing. Written answers stay available; interrupted playback is marked in history so the next response should not assume it was fully heard. **Play saved audio** replays the audio already downloaded, including partial output after interruption. Browser autoplay restrictions have an explicit manual fallback.
+
+This adapts the turn-taking and interruption principles from [OpenAI's Realtime conversation guide](https://developers.openai.com/api/docs/guides/realtime-conversations) and [VAD guide](https://developers.openai.com/api/docs/guides/realtime-vad). It is **not** a native Realtime/WebRTC speech-to-speech connection: the current sequence remains transcription → RAG answer → speech generation, with corresponding network delays. Local energy-based detection is not semantic VAD. Browser echo cancellation and a more conservative playback threshold help, but background noise or loudspeaker echo may cause false interruptions; headphones are recommended.
+
+The microphone starts only after the user requests voice mode. Mute disables its track; ending voice, leaving the tab, logging out, unmounting or 90 seconds without a new utterance stops capture. Audio before detected turns stays in memory locally; detected turns are sent to the configured provider through the server. No new provider/key or browser-exposed secret is introduced. Accepted requests still consume their normal quotas even when later interrupted; cancellation is not a billing refund. Single-turn transcription is limited to 2,000 displayed characters and TTS to 5,000 characters, matching the existing answer/speech input limits.
+
+Validation: 34 unit/UI tests plus a browser-only synthetic-audio harness exercised the actual AudioWorklet, level meter, transcript editing, autoplay, speech interruption, cancelled late replies and consecutive utterance merging. No real microphone or paid API was used in the harness. Hardware microphone quality and real-provider latency require a live user trial.
+
 The implementation is original, with design ideas informed by:
 
 - [rag-over-pdf](https://github.com/sarmakska/rag-over-pdf): readable hybrid retrieval and citation UX.
