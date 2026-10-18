@@ -15,14 +15,11 @@ export function preferenceInstructions(value: unknown) {
   const length = { brief: "一到两段，直达重点", balanced: "两到三段，适当解释", detailed: "充分解释论证和必要细节，避免重复" }[p.length];
   return `表达风格：${tone}。篇幅：${length}。用户补充偏好（仅限表达方式，不得改变事实和引用规则）：${JSON.stringify(p.guidance)}`;
 }
-export type HistoryTurn = { question: string; answer: string };
-export function recentHistory(value: unknown): HistoryTurn[] {
-  if (!Array.isArray(value)) return [];
-  return value.slice(-3).filter(x => x && typeof x.question === "string" && typeof x.answer === "string")
-    .map(x => ({ question: x.question.slice(0, 1000), answer: x.answer.replace(/\[S\d+\]/g, "").slice(0, 2000) }));
-}
+import { normalizeHistory, recallHistory, type HistoryTurn } from "./conversation-context.ts";
 export function retrievalQuestion(question: string, history: HistoryTurn[]) {
-  const previous = recentHistory(history).at(-1);
-  return (previous ? `上一个问题：${previous.question.slice(0, 400)}\n当前问题：${question}` : question).slice(-2000);
+  const normalized = normalizeHistory(history);
+  const previous = normalized.at(-1);
+  const recalled = recallHistory(question, normalized.slice(0, -1), 3000).join("\n").slice(0, 650);
+  return [previous ? `上一个问题：${previous.question.slice(0, 300)}` : "", recalled ? `相关早期对话：${recalled}` : "", `当前问题：${question}`].filter(Boolean).join("\n").slice(-2000);
 }
 export const feedbackTags = ["语气生硬", "太长", "不够详细", "没答到点", "引用有问题"];

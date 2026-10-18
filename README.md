@@ -88,3 +88,14 @@ The implementation is original, with design ideas informed by:
 - [RAGFlow](https://github.com/infiniflow/ragflow): document-aware parsing principles.
 - [AnythingLLM](https://github.com/Mintplex-Labs/anything-llm): ingestion status and document workspace UX.
 
+# Conversation history and context
+
+- Enabling **在本机完整保存每本书的对话** stores all turns and their original sources in IndexedDB, isolated by account and book. There is no application-imposed turn-count retention limit. Browser disk limits/clearing still apply; this is not cross-device cloud backup.
+- Existing localStorage history migrates on book selection. The old copy is removed only after the new transaction commits. Previously discarded turns cannot be reconstructed.
+- Short conversations send every prior question/answer, excluding stale citation markers. The current conservative history envelope is 240,000 UTF-8 bytes, independent of turn count. This is an application budget, not an exact tokenizer count or the model's advertised context size. It reserves space for book evidence, instructions and output with the current `gpt-5-mini`; review the budget before switching to a smaller-context model. See the [official model context limits](https://developers.openai.com/api/docs/models/gpt-5-mini).
+- Above that budget, the browser keeps a recent verbatim window, summarizes **all** earlier text in blocks, recursively combines summaries if needed, and retrieves relevant older original passages with Chinese/English keyword matching and explicit turn references. Retrieval is best effort, not a guarantee of perfect recall.
+- Summaries are content-addressed and cached per book. Original chat is never replaced by a summary. Partial completed summary work survives retries; failure is shown rather than silently dropping earlier context. A first long-history summary may take longer.
+- `/api/history/summary` requires login, enforces input/output limits and a separate 500,000-character daily maintenance allowance (minimum 1,000 per request), and does not consume a question. Summary/answer requests use `store: false`; the app does not persist chat in D1. Model-provider processing still occurs.
+- Deleting a book or clearing history deletes its stored conversations and summary cache; disabling history clears this account's stored history on the current browser while retaining the active in-memory conversation. Explicit personal preferences remain separate.
+- Regression checks: `node --experimental-strip-types --test tests/*.test.mjs`, `node scripts/check-reader-feedback.mjs --with-history-model` against local preview after applying migrations. The latter uses ephemeral local accounts and live API calls with synthetic dialogue only.
+

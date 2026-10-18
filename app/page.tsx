@@ -12,11 +12,12 @@ import {
 } from "@/lib/book-library";
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
 import { parseBookBundle } from "@/lib/book-import.mjs";
-import { defaultPreferences, recentHistory, retrievalQuestion, type Preferences } from "@/lib/personalization";
-import { clearHistory, loadHistory, saveHistory } from "@/lib/reading-history";
+import { defaultPreferences, retrievalQuestion, type Preferences } from "@/lib/personalization";
+import { clearHistory, loadHistory, loadSummaries, saveHistory, type SummaryCache } from "@/lib/reading-history";
+import { buildConversationContext } from "@/lib/conversation-context";
 import { AnswerFeedback, ReaderSettings } from "./reader-controls";
 
-type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "retrieving" | "answering" | "speaking" | "error";
+type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
 type Source = Pick<Chunk, "id" | "sectionTitle" | "pageStart" | "pageEnd" | "text">;
 type Exchange = { id: string; question: string; answer: string; sources: Source[] };
@@ -32,6 +33,7 @@ const stageCopy: Record<Stage, string> = {
   indexing: "Building the book index…", ready: "Ready for your question",
   listening: "Listening… tap to finish", transcribing: "Turning speech into text…",
   retrieving: "Finding the best passages…", answering: "Composing a grounded answer…",
+  remembering: "整理较早对话，保留完整原始记录…",
   speaking: "Playing the answer", error: "Something needs attention",
 };
 
@@ -67,6 +69,8 @@ export default function Home() {
   const [authChecked, setAuthChecked] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
   const [preferencesReady, setPreferencesReady] = useState(false);
+  const summaries = useRef<SummaryCache>({});
+  const [contextNote, setContextNote] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const bundleInput = useRef<HTMLInputElement>(null);
   const importLock = useRef(false);
@@ -119,14 +123,15 @@ export default function Home() {
     void fetch("/api/preferences", { cache: "no-store" }).then(async response => {
       const data = await response.json() as { preferences: Preferences; error?: string };
       if (!response.ok) throw new Error(data.error || "偏好读取失败");
-      setPreferences(data.preferences); setPreferencesReady(true);
-      if (!data.preferences.rememberHistory) clearHistory(quota.user.userId);
+      setPreferences(data.preferences);
+      if (!data.preferences.rememberHistory) await clearHistory(quota.user.userId);
+      setPreferencesReady(true);
     }).catch(() => setError("阅读偏好暂时无法加载，请刷新后重试。"));
   }, [quota?.user.userId]);
 
-  function clearReadingHistory() {
+  async function clearReadingHistory() {
     if (!quota || !window.confirm("清空这个账号在本机保存的全部对话？书籍和索引不受影响。")) return;
-    clearHistory(quota.user.userId); setExchanges([]); stopAudio();
+    await clearHistory(quota.user.userId); summaries.current = {}; setContextNote(""); setExchanges([]); stopAudio();
   }
 
   async function savePreferences(next: Preferences) {
@@ -134,8 +139,8 @@ export default function Home() {
     const data = await response.json() as { preferences: Preferences; error?: string };
     if (!response.ok) throw new Error(data.error || "偏好保存失败");
     setPreferences(data.preferences);
-    if (!data.preferences.rememberHistory && quota) clearHistory(quota.user.userId);
-    if (data.preferences.rememberHistory && quota && book) saveHistory(quota.user.userId, book.id, exchanges);
+    if (!data.preferences.rememberHistory && quota) await clearHistory(quota.user.userId);
+    if (data.preferences.rememberHistory && quota && book) await saveHistory(quota.user.userId, book.id, exchanges, summaries.current);
   }
 
   const sampleQuestions = useMemo(() => book ? [
@@ -218,9 +223,13 @@ export default function Home() {
       setError("");
       const stored = await getBook(ownerId, bookId);
       if (!stored) throw new Error("This book is no longer available in the local library.");
+      const history = preferences.rememberHistory ? await loadHistory<Exchange>(ownerId, bookId) : [];
+      const memory = preferences.rememberHistory ? await loadSummaries(ownerId, bookId) : {};
       setBook(bookSummary(stored));
       setChunks(stored.index);
-      setExchanges(preferences.rememberHistory ? loadHistory<Exchange>(ownerId, bookId) : []);
+      setExchanges(history);
+      summaries.current = memory;
+      setContextNote("");
       setQuestion("");
       setActiveSource(null);
       setProgress(100);
@@ -241,7 +250,7 @@ export default function Home() {
     if (!ownerId || bookTransitionBlocked || !window.confirm(`Remove “${name}” from this browser's library?`)) return;
     try {
       await deleteBook(ownerId, bookId);
-      clearHistory(ownerId, bookId);
+      await clearHistory(ownerId, bookId);
       const books = await listBooks(ownerId);
       setLibrary(books);
       if (book?.id === bookId) resetBook();
@@ -260,6 +269,7 @@ export default function Home() {
       const ownerId = quota?.user.userId;
       if (!ownerId) throw new Error("Your login session is not ready. Please refresh and try again.");
       stopAudio(); setError(""); setBook(null); setChunks([]); setExchanges([]); setProgress(3);
+      summaries.current = {}; setContextNote("");
       const id = await fingerprintBook(file);
       const cached = await getBook(ownerId, id);
       if (cached) {
@@ -339,8 +349,18 @@ export default function Home() {
     if (!cleanQuestion || !chunks.length || busy || importing || openingBookId || !preferencesReady) return;
     try {
       stopAudio(); setQuestion(""); setError(""); setStage("retrieving");
-      const history = recentHistory(original ? [] : exchanges);
-      const query = retrievalQuestion(cleanQuestion, history);
+      const conversation = await buildConversationContext(cleanQuestion, exchanges, summaries.current, async text => {
+        setStage("remembering");
+        const response = await fetch("/api/history/summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+        const data = await response.json() as { summary: string; error?: string };
+        if (!response.ok) throw new Error(data.error || "对话摘要失败，请重试；原始记录仍然保留。");
+        return data.summary;
+      }, async () => {
+        if (preferences.rememberHistory && quota && book) await saveHistory(quota.user.userId, book.id, exchanges, summaries.current);
+      });
+      setContextNote(conversation.mode === "full" ? `本次参考全部 ${conversation.totalTurns} 轮前文` : `本次参考早期摘要、${conversation.turns.length} 轮近期原文及 ${conversation.recalled.length} 段相关历史`);
+      setStage("retrieving");
+      const query = retrievalQuestion(cleanQuestion, exchanges);
       const [queryEmbedding] = await embedTexts([query], book?.embeddingModel, "query"); setProgress(100);
       if (chunks.some((chunk) => chunk.embedding.length !== queryEmbedding.length)) {
         throw new Error("The question vector does not match this book's saved index.");
@@ -349,7 +369,7 @@ export default function Home() {
       setStage("answering");
       const response = await fetch("/api/answer", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: cleanQuestion, history: original ? recentHistory([original]) : history, revision, contexts: retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text })) }),
+        body: JSON.stringify({ question: cleanQuestion, conversation, revision, revisionAnswer: original?.answer, contexts: retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text })) }),
       });
       const payload = await response.json() as { error?: string; answer: string; quota?: QuotaSnapshot };
       if (!response.ok) throw new Error(payload.error || "Answer generation failed");
@@ -358,12 +378,12 @@ export default function Home() {
       const next = [...exchanges, { id: crypto.randomUUID(), question: cleanQuestion, answer: payload.answer, sources }];
       setExchanges(next);
       if (preferences.rememberHistory && quota && book) {
-        try { saveHistory(quota.user.userId, book.id, next); } catch { setError("回答已生成，但本机空间不足，历史未能保存。"); }
+        try { await saveHistory(quota.user.userId, book.id, next, summaries.current); } catch { setError("回答已生成，但本机存储失败，历史未能保存；请勿关闭页面。"); }
       }
       const spokenAnswer = String(payload.answer).replace(/\[S\d+\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
       await speak(spokenAnswer);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The question could not be answered."); setStage("error");
+      setQuestion(cleanQuestion); setError(caught instanceof Error ? caught.message : "The question could not be answered."); setStage("error");
     }
   }
 
@@ -444,6 +464,8 @@ export default function Home() {
   }
 
   function resetBook() {
+    if (bookTransitionBlocked) return;
+    summaries.current = {}; setContextNote("");
     stopAudio(); setBook(null); setChunks([]); setExchanges([]); setQuestion("");
     setActiveSource(null); setError(""); setProgress(0); setStage("idle");
   }
@@ -527,7 +549,7 @@ export default function Home() {
               <form onSubmit={(event) => { event.preventDefault(); void ask(question); }}><label htmlFor="question">{stage === "listening" ? "Listening to your question…" : stageCopy[stage]}</label><input id="question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={book ? "Or type a question…" : "Upload a book first"} disabled={!book || busy || stage === "listening"} /></form>
               {stage === "speaking" ? <button className="send-button audio-control" onClick={toggleAudio} aria-label={isAudioPaused ? "Resume audio" : "Pause audio"}>{isAudioPaused ? <Play size={17} fill="currentColor" /> : <Pause size={17} fill="currentColor" />}</button> : <button className="send-button" onClick={() => void ask(question)} disabled={!question.trim() || !book || busy} aria-label="Send question"><ArrowUp size={18} /></button>}
             </div>
-            <p className="ai-disclosure">Voice answers are AI-generated. Verify important details against the cited passages.</p>
+            <p className="ai-disclosure">{contextNote || "短对话参考全部前文；长对话使用摘要并找回相关原始消息。"}<br />{preferences.rememberHistory ? `本机完整保留 ${exchanges.length} 轮对话` : "当前未开启跨会话保存"} · 请核对原文引用。</p>
           </div>
         </section>
 

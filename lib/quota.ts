@@ -9,7 +9,7 @@ export const DEFAULT_VOICE_SECONDS_LIMIT = 10 * 60;
 const DAILY_EMBEDDING_CHARACTER_LIMIT = 750_000;
 const DAILY_SPEECH_CHARACTER_LIMIT = 50_000;
 
-type Meter = "question" | "voice" | "embedding" | "queryEmbedding" | "speech";
+type Meter = "question" | "voice" | "embedding" | "queryEmbedding" | "speech" | "historySummary";
 
 export type QuotaSnapshot = {
   date: string;
@@ -115,6 +115,10 @@ export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: numbe
     speech: {
       column: "speech_characters", limit: String(DAILY_SPEECH_CHARACTER_LIMIT),
       message: "Your daily speech playback allowance has been reached",
+    },
+    historySummary: {
+      column: "history_summary_characters", limit: "500000",
+      message: "今天的长对话整理额度已用完，请明天继续；原始聊天仍然保留。",
     },
   } satisfies Record<Meter, { column: string; limit: string; message: string }>;
   const spec = specs[meter];

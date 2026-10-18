@@ -40,6 +40,28 @@ const rows = (await call("/api/admin/feedback", admin)).data.feedback.filter(x =
 assert.equal(rows.length, 1);
 assert.equal(rows[0].rating, "helpful");
 assert.deepEqual(JSON.parse(rows[0].tags), ["语气生硬"]);
+assert.equal((await call("/api/history/summary", "", "POST", { text: "test" })).response.status,401);
+assert.equal((await call("/api/history/summary", reader, "POST", { text: "" })).response.status,400);
+assert.equal((await call("/api/history/summary", reader, "POST", { text: "x".repeat(17000) })).response.status,400);
+if (process.argv.includes("--with-history-model")) {
+  const source = "第 1 轮\n用户：我读这本书是为了海鸥项目，截止日期是周五，请帮我记住这个阅读目标。\n助手：我们会围绕这个目标展开讨论。";
+  const before = (await call("/api/quota",reader)).data.quota.questions.used;
+  const memory = await call("/api/history/summary",reader,"POST",{text:source});
+  assert.equal(memory.response.status,200, memory.data.error);
+  assert.match(memory.data.summary,/海鸥/); assert.match(memory.data.summary,/周五/);
+  assert.equal((await call("/api/quota",reader)).data.quota.questions.used,before);
+  const turns = [{question:"我的项目叫海鸥，周五截止。",answer:"明白。"}, ...Array.from({length:7},(_,i)=>({question:`第${i+2}个阅读问题`,answer:"我们讨论了如何核对原文。"}))];
+  const contexts = [{ id:"qa-reading",sectionTitle:"阅读方法",pageStart:1,pageEnd:1,text:"核对原文可以避免将猜测误认为作者的结论。" }];
+  for (const conversation of [
+    {mode:"full",turns,summary:"",recalled:[],totalTurns:8},
+    {mode:"compressed",turns:turns.slice(-2),summary:memory.data.summary,recalled:[source],totalTurns:8},
+  ]) {
+    const result=await call("/api/answer",reader,"POST",{question:"我最初说的项目叫什么，什么时候截止？",conversation,contexts});
+    assert.equal(result.response.status,200,result.data.error);
+    assert.match(result.data.answer,/海鸥/);assert.match(result.data.answer,/周五|星期五/);
+  }
+  console.log("PASS: live summary keeps original reading goal; full and compressed contexts recall first-turn details beyond three turns; summaries do not spend question quota.");
+}
 if (process.argv.includes("--with-model")) {
   const result = await call("/api/answer", reader, "POST", {
     question: "为什么？", history: [{ question: "作者建议怎样阅读？", answer: "带着问题阅读，并核对原文。" }],

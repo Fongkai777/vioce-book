@@ -1,0 +1,1 @@
+ALTER TABLE `daily_usage` ADD `history_summary_characters` integer DEFAULT 0 NOT NULL;

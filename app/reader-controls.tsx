@@ -3,7 +3,7 @@ import { useState } from "react";
 import { SlidersHorizontal, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { feedbackTags, type Preferences } from "@/lib/personalization";
 
-export function ReaderSettings({ preferences, onSave, onClear, disabled }: { preferences: Preferences; onSave: (p: Preferences) => Promise<void>; onClear: () => void; disabled: boolean }) {
+export function ReaderSettings({ preferences, onSave, onClear, disabled }: { preferences: Preferences; onSave: (p: Preferences) => Promise<void>; onClear: () => Promise<void>; disabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(preferences);
   const [saving, setSaving] = useState(false);
@@ -16,9 +16,10 @@ export function ReaderSettings({ preferences, onSave, onClear, disabled }: { pre
       <label>语气<select value={draft.tone} onChange={e => setDraft({ ...draft, tone: e.target.value })}><option value="natural">自然直接</option><option value="friendly">亲切易懂</option><option value="academic">严谨深入</option></select></label>
       <label>回答长度<select value={draft.length} onChange={e => setDraft({ ...draft, length: e.target.value })}><option value="brief">简短</option><option value="balanced">适中</option><option value="detailed">详细</option></select></label>
       <label>我的偏好<textarea maxLength={600} value={draft.guidance} onChange={e => setDraft({ ...draft, guidance: e.target.value })} placeholder="例如：先给结论，解释专业词汇，少用列表。" /></label>
-      <label className="history-checkbox"><input type="checkbox" checked={draft.rememberHistory} onChange={e => setDraft({ ...draft, rememberHistory: e.target.checked })} /> 在本机保留每本书最近 20 轮对话</label>
-      <p className="settings-description">同一账号、同一本书隔离保存。提问时仅发送最近 3 轮辅助理解追问；不自动生成长期人物画像。关闭后会清除本机已保存的历史。</p>
-      <div className="settings-actions"><button type="button" disabled={saving} onClick={onClear}>清空本机对话</button><button className="primary-action" disabled={saving} onClick={async () => { setSaving(true); setError(""); try { await onSave(draft); setOpen(false); } catch (e) { setError(e instanceof Error ? e.message : "保存失败"); } finally { setSaving(false); } }}>{saving ? "保存中…" : "保存偏好"}</button></div>
+      <label className="history-checkbox"><input type="checkbox" checked={draft.rememberHistory} onChange={e => setDraft({ ...draft, rememberHistory: e.target.checked })} /> 在本机完整保存每本书的对话</label>
+      <p className="settings-description">按账号和书籍隔离，不再限制轮数。短对话发送全部前文；超出文本预算时，用模型整理早期摘要，并找回相关原始消息。摘要不替代或删除原始记录，也不自动修改个人偏好。</p>
+      <p className="settings-description">历史和摘要保存在当前浏览器，不跨设备同步；清除浏览器数据会丢失记录。整理摘要会调用模型，但不额外扣提问次数。关闭保存后会清除本机历史，当前页面仍可继续对话。</p>
+      <div className="settings-actions"><button type="button" disabled={saving} onClick={async () => { setSaving(true); setError(""); try { await onClear(); } catch { setError("清空失败，请重试。"); } finally { setSaving(false); } }}>清空本机对话</button><button className="primary-action" disabled={saving} onClick={async () => { setSaving(true); setError(""); try { await onSave(draft); setOpen(false); } catch (e) { setError(e instanceof Error ? e.message : "保存失败"); } finally { setSaving(false); } }}>{saving ? "保存中…" : "保存偏好"}</button></div>
       {error && <p role="alert">{error}</p>}
     </section></div>}
   </>;
