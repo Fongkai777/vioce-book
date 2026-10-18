@@ -433,7 +433,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .admin-feedback-card small { display:block; color:var(--muted); margin-top:5px; }
 .admin-feedback-card p, .admin-feedback-card blockquote { white-space:pre-wrap; line-height:1.7; font-size:14px; margin:12px 0; }
 .admin-feedback-card details { margin-top:12px; color:var(--muted); font-size:12px; }
-.voice-session-card { border:1px solid #c5d7cc; border-radius:16px; background:#f1f6ef; padding:14px 16px; margin-bottom:10px; max-height:40dvh; overflow:auto; }
+.voice-session-card { border:1px solid #c5d7cc; border-radius:16px; background:#f1f6ef; padding:14px 16px; margin-bottom:10px; max-height:52dvh; overflow:auto; }
 .voice-session-top { display:flex; align-items:center; gap:8px; }
 .voice-session-top strong { font-size:13px; flex:1; }
 .voice-session-top > button { display:grid; place-items:center; background:none; border:0; padding:5px; color:var(--muted); }
@@ -448,6 +448,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .voice-transcript label { font-size:10px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); }
 .voice-transcript p { font-size:16px; line-height:1.5; margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
 .voice-transcript textarea { width:100%; min-height:72px; max-height:130px; padding:9px; margin-top:8px; border:1px solid #b4c7ba; border-radius:8px; background:white; font:inherit; resize:vertical; }
+.voice-transcript > .voice-session-actions { position:sticky; bottom:0; background:#f1f6ef; padding-top:5px; }
 .voice-notice { font-size:12px; line-height:1.5; color:var(--muted); margin:5px 0 10px; }
 .voice-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 4px 8px; font-size:11px; color:var(--muted); }
 .voice-toolbar:empty { display:none; }
