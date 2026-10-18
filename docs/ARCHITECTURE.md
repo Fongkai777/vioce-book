@@ -9,7 +9,7 @@ PDF file
   -> heading-aware section builder
   -> overlapping child passages with page metadata
   -> /api/embed -> text-embedding-3-small
-  -> session-local passage index
+  -> IndexedDB local library (PDF + passage index)
 
 Microphone
   -> MediaRecorder WebM/M4A
@@ -27,7 +27,7 @@ Every API route validates the site's HttpOnly login session before calling OpenA
 
 ## Why browser-side ingestion for the MVP
 
-The source book never needs to be stored on the server, which gives the prototype a clear privacy story and removes upload-storage lifecycle work. Only passage text is sent to the embedding endpoint for normal text PDFs. When a page has little or no embedded text, that page is rendered to a bounded JPEG in the browser and sent to the authenticated OCR endpoint. The tradeoff is that indexing must restart after a refresh and large books consume browser memory.
+The source book never needs to be stored on the server, which gives the prototype a clear privacy story and removes upload-storage lifecycle work. Each PDF, its structural chunks, and its embedding vectors are stored in IndexedDB under the signed-in local account identifier. Selecting an existing book restores that index without parsing or embedding again. Only passage text is sent to the embedding endpoint for normal text PDFs. When a page has little or no embedded text, that page is rendered to a bounded JPEG in the browser and sent to the authenticated OCR endpoint. The tradeoff is that libraries are browser-local rather than synchronized across devices, and large collections consume browser storage.
 
 For production, ingestion should become an asynchronous server job backed by object storage and a persistent vector database. Status events can stream to the client while parsing and embedding continue.
 
@@ -54,6 +54,7 @@ The answer prompt labels evidence `[S1]`, `[S2]`, and so on. The model must answ
 ## Security and privacy
 
 - The OpenAI API key is server-only.
+- PDFs, chunks, and embeddings are stored in browser IndexedDB and are never written to server storage.
 - `.env.local`, generated data, and build artifacts are ignored by Git.
 - Uploaded PDF bytes remain in the browser session.
 - API inputs are bounded by passage count and length.

@@ -3,24 +3,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, BookOpen, Check, ChevronRight, FileText, Headphones,
-  LoaderCircle, LogOut, Mic, Pause, Play, RotateCcw, ShieldCheck, Sparkles,
-  Square, Upload, Volume2, X,
+  Library, LoaderCircle, LogOut, Mic, Pause, Play, Plus, ShieldCheck, Sparkles,
+  Square, Trash2, Upload, Volume2, X,
 } from "lucide-react";
+import {
+  deleteBook, fingerprintBook, getBook, listBooks, markBookOpened, saveBook,
+  type BookSummary, type StoredBook, type StoredChunk,
+} from "@/lib/book-library";
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "retrieving" | "answering" | "speaking" | "error";
-type Chunk = {
-  id: string; sectionTitle: string; pageStart: number; pageEnd: number;
-  text: string; embedding: number[]; denseScore?: number; sparseScore?: number; fusionScore?: number;
-};
+type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
 type Source = Pick<Chunk, "id" | "sectionTitle" | "pageStart" | "pageEnd" | "text">;
 type Exchange = { id: string; question: string; answer: string; sources: Source[] };
-type Book = { name: string; pages: number; chapters: number; chunks: number };
 type QuotaSnapshot = {
   questions: { used: number; limit: number; remaining: number };
   voice: { usedSeconds: number; limitSeconds: number; remainingSeconds: number };
   isAdmin: boolean;
-  user: { username: string; displayName: string };
+  user: { userId: string; username: string; displayName: string };
 };
 
 const stageCopy: Record<Stage, string> = {
@@ -45,7 +45,11 @@ function AnswerText({ text, onCitation }: { text: string; onCitation: (index: nu
 export default function Home() {
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
-  const [book, setBook] = useState<Book | null>(null);
+  const [book, setBook] = useState<BookSummary | null>(null);
+  const [library, setLibrary] = useState<BookSummary[]>([]);
+  const [libraryReady, setLibraryReady] = useState(false);
+  const [openingBookId, setOpeningBookId] = useState<string | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [question, setQuestion] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
@@ -63,6 +67,7 @@ export default function Home() {
   const recordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const busy = !["idle", "ready", "error", "listening", "speaking"].includes(stage);
+  const bookTransitionBlocked = !["idle", "ready", "error", "speaking"].includes(stage);
   const latest = exchanges.at(-1);
   const currentSources = latest?.sources || [];
 
@@ -86,6 +91,17 @@ export default function Home() {
       })
       .catch(() => setAuthChecked(true));
   }, []);
+
+  useEffect(() => {
+    const ownerId = quota?.user.userId;
+    if (!ownerId) return;
+    let cancelled = false;
+    void listBooks(ownerId)
+      .then((books) => { if (!cancelled) setLibrary(books); })
+      .catch(() => { if (!cancelled) setError("Your local book library could not be opened."); })
+      .finally(() => { if (!cancelled) setLibraryReady(true); });
+    return () => { cancelled = true; };
+  }, [quota?.user.userId]);
 
   const sampleQuestions = useMemo(() => book ? [
     "What is the central argument of this book?",
@@ -154,13 +170,69 @@ export default function Home() {
     return vectors;
   }
 
+  function bookSummary(stored: StoredBook): BookSummary {
+    const { id, name, pages, chapters, chunks: chunkCount, fileSize, storedAt, lastOpenedAt } = stored;
+    return { id, name, pages, chapters, chunks: chunkCount, fileSize, storedAt, lastOpenedAt };
+  }
+
+  async function openStoredBook(bookId: string) {
+    const ownerId = quota?.user.userId;
+    if (!ownerId || bookTransitionBlocked) return;
+    try {
+      setOpeningBookId(bookId);
+      stopAudio();
+      setError("");
+      const stored = await getBook(ownerId, bookId);
+      if (!stored) throw new Error("This book is no longer available in the local library.");
+      setBook(bookSummary(stored));
+      setChunks(stored.index);
+      setExchanges([]);
+      setQuestion("");
+      setActiveSource(null);
+      setProgress(100);
+      setStage("ready");
+      setLibraryOpen(false);
+      const opened = { ...stored, lastOpenedAt: new Date().toISOString() };
+      await markBookOpened(ownerId, opened);
+      setLibrary(await listBooks(ownerId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The saved book could not be opened.");
+      setStage("error");
+    } finally {
+      setOpeningBookId(null);
+    }
+  }
+
+  async function removeLibraryBook(bookId: string, name: string) {
+    const ownerId = quota?.user.userId;
+    if (!ownerId || bookTransitionBlocked || !window.confirm(`Remove “${name}” from this browser's library?`)) return;
+    try {
+      await deleteBook(ownerId, bookId);
+      const books = await listBooks(ownerId);
+      setLibrary(books);
+      if (book?.id === bookId) resetBook();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The book could not be removed.");
+      setStage("error");
+    }
+  }
+
   async function handleFile(file?: File) {
     if (!file) return;
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       setError("Please choose a PDF file."); setStage("error"); return;
     }
     try {
-      stopAudio(); setError(""); setBook(null); setChunks([]); setExchanges([]); setProgress(3); setStage("reading");
+      const ownerId = quota?.user.userId;
+      if (!ownerId) throw new Error("Your login session is not ready. Please refresh and try again.");
+      stopAudio(); setError(""); setBook(null); setChunks([]); setExchanges([]); setProgress(3);
+      const id = await fingerprintBook(file);
+      const cached = await getBook(ownerId, id);
+      if (cached) {
+        await openStoredBook(id);
+        return;
+      }
+      setStage("reading");
       const { pages, totalPages } = await extractPages(file);
       const nonEmptyPages = pages.filter((page) => page.text.length > 20);
       if (!nonEmptyPages.length) throw new Error("No readable text was found, including after OCR.");
@@ -170,8 +242,25 @@ export default function Home() {
       const embeddings = await embedTexts(structuralChunks.map((chunk: Omit<Chunk, "embedding">) => `${chunk.sectionTitle}\n${chunk.text}`));
       const indexed = structuralChunks.map((chunk: Omit<Chunk, "embedding">, index: number) => ({ ...chunk, embedding: embeddings[index] }));
       const chapters = new Set(indexed.map((chunk: Chunk) => chunk.sectionTitle).filter((title: string) => title !== "Front matter")).size;
+      const now = new Date().toISOString();
+      const saved: Omit<StoredBook, "ownerId" | "storageKey"> = {
+        id,
+        name: file.name.replace(/\.pdf$/i, ""),
+        pages: totalPages,
+        chapters,
+        chunks: indexed.length,
+        fileSize: file.size,
+        storedAt: now,
+        lastOpenedAt: now,
+        pdf: file,
+        index: indexed,
+      };
+      await saveBook(ownerId, saved);
+      void navigator.storage?.persist?.();
+      setLibrary(await listBooks(ownerId));
       setChunks(indexed);
-      setBook({ name: file.name.replace(/\.pdf$/i, ""), pages: totalPages, chapters, chunks: indexed.length });
+      setBook(saved);
+      setLibraryOpen(false);
       setProgress(100); setStage("ready");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The book could not be indexed."); setStage("error");
@@ -195,7 +284,8 @@ export default function Home() {
       if (payload.quota) setQuota(payload.quota);
       const sources = retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text }));
       setExchanges((items) => [...items, { id: crypto.randomUUID(), question: cleanQuestion, answer: payload.answer, sources }]);
-      await speak(payload.answer);
+      const spokenAnswer = String(payload.answer).replace(/\[S\d+\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
+      await speak(spokenAnswer);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The question could not be answered."); setStage("error");
     }
@@ -279,7 +369,7 @@ export default function Home() {
 
   function resetBook() {
     stopAudio(); setBook(null); setChunks([]); setExchanges([]); setQuestion("");
-    setError(""); setProgress(0); setStage("idle");
+    setActiveSource(null); setError(""); setProgress(0); setStage("idle");
   }
 
   async function logout() {
@@ -287,37 +377,51 @@ export default function Home() {
     window.location.replace("/login");
   }
 
-  if (!authChecked) return <main className="session-loading"><LoaderCircle className="spin" size={24} /><span>Opening your reading desk…</span></main>;
+  if (!authChecked || (quota && !libraryReady)) return <main className="session-loading"><LoaderCircle className="spin" size={24} /><span>Opening your local library…</span></main>;
 
   return (
     <main className="app-shell">
-      <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => void handleFile(event.target.files?.[0])} />
+      <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file); }} />
       <header className="topbar">
         <button className="brand" onClick={resetBook} aria-label="Return to start"><span className="brand-mark"><BookOpen size={18} strokeWidth={2.4} /></span><span>VOICEBOOK</span></button>
-        <div className="quota-note">{quota ? <><b>{quota.questions.remaining}</b> questions · <b>{Math.floor(quota.voice.remainingSeconds / 60)}</b> voice min left today</> : <><span className="privacy-dot" /> Your book stays in this browser session</>}</div>
-        <div className="topbar-actions">{quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}<button className="new-book" onClick={() => fileInput.current?.click()}><Upload size={15} /> {book ? "Change book" : "Upload book"}</button><button className="icon-action" onClick={() => void logout()} aria-label={`Sign out ${quota?.user.username || "user"}`}><LogOut size={15} /></button></div>
+        <div className="quota-note">{quota ? <><b>{library.length}</b> local books · <b>{quota.questions.remaining}</b> questions · <b>{Math.floor(quota.voice.remainingSeconds / 60)}</b> voice min</> : <><span className="privacy-dot" /> Books and indexes stay in this browser</>}</div>
+        <div className="topbar-actions">
+          {quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}
+          <button className="library-toggle" onClick={() => setLibraryOpen((value) => !value)}><Library size={15} /> Library</button>
+          <button className="new-book" onClick={() => fileInput.current?.click()} disabled={bookTransitionBlocked}><Plus size={15} /> Add book</button>
+          <button className="icon-action" onClick={() => void logout()} aria-label={`Sign out ${quota?.user.username || "user"}`}><LogOut size={15} /></button>
+        </div>
       </header>
 
+      {libraryOpen && <button className="library-backdrop" onClick={() => setLibraryOpen(false)} aria-label="Close library" />}
+
       <section className="workspace">
-        <aside className="book-panel">
-          <p className="eyebrow">Your reading desk</p>
-          {book ? <>
-            <div className="book-cover" aria-label={`${book.name} cover`}><span className="cover-rule" /><BookOpen size={30} /><strong>{book.name}</strong><small>VOICE EDITION</small></div>
-            <h1 className="book-title">{book.name}</h1>
+        <aside className={`book-panel ${libraryOpen ? "mobile-open" : ""}`}>
+          <div className="library-heading"><div><p className="eyebrow">Local library</p><span>{library.length} {library.length === 1 ? "book" : "books"}</span></div><button onClick={() => fileInput.current?.click()} disabled={bookTransitionBlocked} aria-label="Add a PDF"><Plus size={16} /></button></div>
+          {library.length ? <div className="library-list">{library.map((item) => <div className={`library-item ${book?.id === item.id ? "active" : ""}`} key={item.id}>
+            <button className="library-select" onClick={() => void openStoredBook(item.id)} disabled={bookTransitionBlocked || openingBookId === item.id}>
+              <span className="library-book-icon">{openingBookId === item.id ? <LoaderCircle className="spin" size={15} /> : <BookOpen size={15} />}</span>
+              <span><strong>{item.name}</strong><small>{item.pages} pages · {item.chunks} passages</small></span>
+            </button>
+            <button className="library-delete" onClick={() => void removeLibraryBook(item.id, item.name)} disabled={bookTransitionBlocked} aria-label={`Remove ${item.name}`}><Trash2 size={13} /></button>
+          </div>)}</div> : <button className="upload-card library-empty" onClick={() => fileInput.current?.click()}><span className="upload-icon"><Upload size={22} /></span><strong>Add your first book</strong><span>Its PDF and search index will stay in this browser.</span><em>Browse files</em></button>}
+
+          {book && <div className="selected-book-card">
+            <p className="eyebrow">Now reading</p>
+            <div className="selected-book-title"><span><BookOpen size={18} /></span><strong>{book.name}</strong></div>
             <div className="book-facts"><span><b>{book.pages}</b> pages</span><span><b>{book.chapters || "—"}</b> sections</span><span><b>{book.chunks}</b> passages</span></div>
-            <div className="index-ready"><Check size={14} /> Hybrid index ready</div>
-            <button className="outline-action" onClick={() => fileInput.current?.click()}><RotateCcw size={14} /> Replace PDF</button>
-          </> : <button className="upload-card" onClick={() => fileInput.current?.click()}><span className="upload-icon"><Upload size={22} /></span><strong>Choose a PDF book</strong><span>Long books welcome.<br />Text-based PDFs work best.</span><em>Browse files</em></button>}
-          <div className="method-note"><Sparkles size={15} /><p><strong>Beyond basic RAG</strong><br />Heading-aware chunks, dense + BM25 retrieval, rank fusion, and diversified evidence.</p></div>
+            <div className="index-ready"><Check size={14} /> Local index ready</div>
+          </div>}
+          <div className="method-note"><Sparkles size={15} /><p><strong>Stored locally</strong><br />PDF, chunks, and embeddings remain in this browser. Selecting a saved book does not re-index it.</p></div>
         </aside>
 
         <section className="conversation-panel">
           <div className="conversation-scroll">
             {!book && stage === "idle" ? <div className="welcome-state">
-              <span className="welcome-kicker">A voice-first reading companion</span><h1>Don’t search the book.<br /><i>Talk</i> to it.</h1>
-              <p>Upload a long PDF, ask a question aloud, and hear a grounded answer with passages you can verify.</p>
-              <button className="primary-action" onClick={() => fileInput.current?.click()}><FileText size={17} /> Open a PDF book</button>
-              <div className="flow-line"><span>01 Upload</span><ChevronRight size={13} /><span>02 Ask</span><ChevronRight size={13} /><span>03 Listen</span></div>
+              <span className="welcome-kicker">Your local reading library</span><h1>{library.length ? <>Choose a book.<br /><i>Pick up</i> where you left off.</> : <>Don’t search the book.<br /><i>Talk</i> to it.</>}</h1>
+              <p>{library.length ? "Select a saved book from your library. Its passages and embeddings are already ready for conversation." : "Upload a PDF once. Voicebook keeps its content and search index locally for your next conversation."}</p>
+              <button className="primary-action" onClick={() => library.length ? setLibraryOpen(true) : fileInput.current?.click()}>{library.length ? <Library size={17} /> : <FileText size={17} />} {library.length ? "Choose from library" : "Add a PDF book"}</button>
+              <div className="flow-line"><span>01 Add</span><ChevronRight size={13} /><span>02 Choose</span><ChevronRight size={13} /><span>03 Ask</span></div>
             </div> : exchanges.length === 0 ? <div className="ready-state">
               <div className="orb-small"><Headphones size={28} /></div><p className="eyebrow">The book is listening</p><h2>What would you like to understand?</h2>
               <p>Ask about an argument, event, character, definition, or connection across chapters.</p>
