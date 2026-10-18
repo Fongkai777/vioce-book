@@ -1,12 +1,12 @@
 export type Preferences = { tone: string; length: string; guidance: string; rememberHistory: boolean };
-export const defaultPreferences: Preferences = { tone: "natural", length: "balanced", guidance: "", rememberHistory: false };
+export const defaultPreferences: Preferences = { tone: "natural", length: "balanced", guidance: "", rememberHistory: true };
 export function normalizePreferences(value: unknown): Preferences {
   const p = (value && typeof value === "object" ? value : {}) as Partial<Preferences>;
   return {
     tone: ["natural", "friendly", "academic"].includes(p.tone || "") ? p.tone! : "natural",
     length: ["brief", "balanced", "detailed"].includes(p.length || "") ? p.length! : "balanced",
     guidance: typeof p.guidance === "string" ? p.guidance.trim().slice(0, 600) : "",
-    rememberHistory: p.rememberHistory === true,
+    rememberHistory: typeof p.rememberHistory === "boolean" ? p.rememberHistory : defaultPreferences.rememberHistory,
   };
 }
 export function preferenceInstructions(value: unknown) {

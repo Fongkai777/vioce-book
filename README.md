@@ -90,7 +90,7 @@ The implementation is original, with design ideas informed by:
 
 # Conversation history and context
 
-- Enabling **在本机完整保存每本书的对话** stores all turns and their original sources in IndexedDB, isolated by account and book. There is no application-imposed turn-count retention limit. Browser disk limits/clearing still apply; this is not cross-device cloud backup.
+- **在本机完整保存每本书的对话** is enabled by default; an explicit opt-out remains respected. It stores all turns and their original sources in IndexedDB, isolated by account and book. There is no application-imposed turn-count retention limit. Browser disk limits/clearing still apply; this is not cross-device cloud backup.
 - Existing localStorage history migrates on book selection. The old copy is removed only after the new transaction commits. Previously discarded turns cannot be reconstructed.
 - Short conversations send every prior question/answer, excluding stale citation markers. The current conservative history envelope is 240,000 UTF-8 bytes, independent of turn count. This is an application budget, not an exact tokenizer count or the model's advertised context size. It reserves space for book evidence, instructions and output with the current `gpt-5-mini`; review the budget before switching to a smaller-context model. See the [official model context limits](https://developers.openai.com/api/docs/models/gpt-5-mini).
 - Above that budget, the browser keeps a recent verbatim window, summarizes **all** earlier text in blocks, recursively combines summaries if needed, and retrieves relevant older original passages with Chinese/English keyword matching and explicit turn references. Retrieval is best effort, not a guarantee of perfect recall.

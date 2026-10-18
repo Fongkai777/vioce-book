@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import { defaultPreferences, normalizePreferences, preferenceInstructions, retrievalQuestion } from "../lib/personalization.ts";
 import { normalizeHistory } from "../lib/conversation-context.ts";
 
-test("preferences default to private history and bounded explicit style", () => {
+test("preferences default to saved local history and preserve explicit opt-out", () => {
   assert.deepEqual(normalizePreferences(null), defaultPreferences);
-  assert.equal(normalizePreferences({ rememberHistory: "true", tone: "bad", guidance: "x".repeat(1000) }).rememberHistory, false);
+  assert.equal(defaultPreferences.rememberHistory, true);
+  assert.equal(normalizePreferences({}).rememberHistory, true);
+  assert.equal(normalizePreferences({ tone: "friendly" }).rememberHistory, true);
+  assert.equal(normalizePreferences({ rememberHistory: false }).rememberHistory, false);
+  assert.equal(normalizePreferences({ rememberHistory: true }).rememberHistory, true);
+  assert.equal(normalizePreferences({ rememberHistory: "true", tone: "bad", guidance: "x".repeat(1000) }).rememberHistory, true);
   assert.equal(normalizePreferences({ guidance: "x".repeat(1000) }).guidance.length, 600);
   assert.match(preferenceInstructions({ tone: "friendly", length: "brief" }), /亲切耐心.*一到两段/);
 });

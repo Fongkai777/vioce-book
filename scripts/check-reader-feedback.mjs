@@ -24,7 +24,7 @@ try {
 const admin = session("admin");
 const reader = session("user");
 const defaults = (await call("/api/preferences", reader)).data.preferences;
-assert.equal(defaults.rememberHistory, false);
+assert.equal(defaults.rememberHistory, true);
 const settings = { tone: "friendly", length: "brief", guidance: "先给结论", rememberHistory: true };
 assert.equal((await call("/api/preferences", reader, "PUT", settings)).response.status, 200);
 assert.deepEqual((await call("/api/preferences", reader)).data.preferences, settings);
