@@ -25,5 +25,15 @@ test("transcripts appear before sending and can be edited or cancelled", () => {
   const html = render({state:"reviewing",transcript:"What is the main idea?"});
   assert.match(html, /You said/); assert.match(html, /What is the main idea/); assert.match(html, /Edit transcript/);
   const editing = render({state:"reviewing",transcript:"Corrected",editing:true,muted:true});
-  assert.match(editing, /<textarea/); assert.match(editing, /paused while you review/); assert.match(editing, /Send now/);
+  assert.match(editing, /<textarea/); assert.match(editing, /Automatic sending is paused/); assert.match(editing, /Send now/);
+});
+test("recognized text remains visible but cannot be submitted during a continuation", () => {
+  const html = render({state:"transcribing",transcript:"Keep my first words"});
+  assert.match(html, /Keep my first words/); assert.match(html, /Nothing has been sent yet/);
+  assert.match(html, /<button disabled="">Send now<\/button>/);
+});
+test("ending voice with a draft offers review rather than pretending to listen", () => {
+  const html = render({active:false,state:"reviewing",transcript:"Keep my first words",editing:true});
+  assert.match(html, /Review your question/); assert.match(html, /Discard question/);
+  assert.doesNotMatch(html, /Listening — go ahead|End voice conversation/);
 });

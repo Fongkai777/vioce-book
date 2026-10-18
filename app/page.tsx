@@ -23,6 +23,7 @@ import BookManager from "./book-manager";
 import VoiceSession from "./voice-session";
 import { VoiceCapture } from "@/lib/voice-capture";
 import { speechSegments, TurnGate } from "@/lib/voice-turn";
+import { VoiceDraft } from "@/lib/voice-draft";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "reviewing" | "voicing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
@@ -69,7 +70,6 @@ export default function Home() {
   const [sampleLibraryOpen, setSampleLibraryOpen] = useState(false);
   const [sampleError, setSampleError] = useState("");
   const [chunks, setChunks] = useState<Chunk[]>([]);
-  const [question, setQuestion] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [error, setError] = useState("");
   const [activeSource, setActiveSource] = useState<Source | null>(null);
@@ -97,8 +97,7 @@ export default function Home() {
   const transcriptionQueue = useRef<Promise<void>>(Promise.resolve());
   const queuedTranscriptions = useRef(0);
   const voiceGeneration = useRef(0);
-  const transcriptRef = useRef("");
-  const continuedTranscript = useRef("");
+  const draft = useRef(new VoiceDraft());
   const reviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replay = useRef<{ buffers: AudioBuffer[]; exchangeId: string } | null>(null);
   const playingExchange = useRef<string | null>(null);
@@ -264,7 +263,6 @@ export default function Home() {
       setExchanges(history);
       summaries.current = memory;
       setContextNote("");
-      setQuestion("");
       setActiveSource(null);
       setProgress(100);
       setStage("ready");
@@ -351,14 +349,14 @@ export default function Home() {
   async function ask(rawQuestion: string, revision = "", original?: Exchange) {
     const cleanQuestion = rawQuestion.trim();
     if (!cleanQuestion || !chunks.length || openingBookId || !preferencesReady) return;
-    interruptReply();
+    interruptReply(); cancelIncoming(true);
     const signal = turnGate.current.next();
     const history = exchangesRef.current;
     const owner = quota?.user.userId, bookId = book?.id;
     clearTranscript(); stopAudio(); setPendingQuestion(cleanQuestion); setVoiceNotice("");
     void prepareAudio().catch(() => {});
     try {
-      stopAudio(); setQuestion(""); setError(""); setStage("retrieving");
+      stopAudio(); setError(""); setStage("retrieving");
       const conversation = await buildConversationContext(cleanQuestion, history, summaries.current, async text => {
         signal.throwIfAborted();
         setStage("remembering");
@@ -402,7 +400,8 @@ export default function Home() {
     } catch (caught) {
       if (signal.aborted) return;
       setPendingQuestion("");
-      setQuestion(cleanQuestion); setError(caught instanceof Error ? caught.message : "The question could not be answered."); setStage("error");
+      draft.current.edit(cleanQuestion); showDraft(); capture.current?.mute(true); setVoiceMuted(true);
+      setError(caught instanceof Error ? caught.message : "The question could not be answered."); setStage("error");
     }
   }
 
@@ -414,7 +413,18 @@ export default function Home() {
 
   function clearTranscript() {
     if (reviewTimer.current) clearTimeout(reviewTimer.current);
-    reviewTimer.current = null; transcriptRef.current = ""; setTranscript(""); setEditingTranscript(false);
+    reviewTimer.current = null; draft.current.clear(); setTranscript(""); setEditingTranscript(false);
+  }
+
+  function showDraft() {
+    setTranscript(draft.current.text); setEditingTranscript(draft.current.needsReview);
+  }
+
+  function cancelIncoming(clear = false) {
+    transcriptionGate.current.next(); transcriptionQueue.current = Promise.resolve(); queuedTranscriptions.current = 0;
+    if (reviewTimer.current) clearTimeout(reviewTimer.current);
+    reviewTimer.current = null;
+    if (clear) clearTranscript();
   }
 
   function markAudioInterrupted() {
@@ -425,20 +435,16 @@ export default function Home() {
     if (preferences.rememberHistory && quota && book) void saveHistory(quota.user.userId, book.id, updated, summaries.current).catch(() => setVoiceNotice("Playback stopped, but its status could not be saved."));
   }
 
-  function interruptReply(keepIncoming = false) {
-    if (!keepIncoming) {
-      transcriptionGate.current.next(); transcriptionQueue.current = Promise.resolve();
-      queuedTranscriptions.current = 0; continuedTranscript.current = "";
-    }
-    turnGate.current.cancel(); markAudioInterrupted(); stopAudio(); clearTranscript(); setPendingQuestion("");
+  function interruptReply() {
+    // Cancel assistant output only. Incoming speech and its draft are separate.
+    turnGate.current.cancel(); markAudioInterrupted(); stopAudio(); setPendingQuestion("");
     setStage(book ? "ready" : "idle");
   }
 
   function endVoice(reason = "") {
     voiceGeneration.current++; capture.current?.stop(); capture.current = null;
-    if (transcriptRef.current) setQuestion(transcriptRef.current);
-    interruptReply(); setVoiceOn(false); setVoiceConnecting(false); setVoiceMuted(false); setVoiceLevel(0);
-    continuedTranscript.current = "";
+    cancelIncoming(); interruptReply(); setVoiceOn(false); setVoiceConnecting(false); setVoiceMuted(false); setVoiceLevel(0);
+    if (draft.current.text) { draft.current.hold(); showDraft(); setStage("reviewing"); }
     if (reason) setVoiceNotice(reason);
   }
 
@@ -446,7 +452,7 @@ export default function Home() {
     if (capture.current || voiceConnecting) return endVoice();
     if (!book || !preferencesReady || openingBookId || ["reading", "indexing"].includes(stage)) return;
     if (quota && (quota.voice.remainingSeconds < 1 || quota.questions.remaining < 1)) { setError("Your daily voice or question allowance has been reached."); return; }
-    interruptReply(); setError(""); setVoiceNotice(""); setVoiceConnecting(true);
+    interruptReply(); cancelIncoming(true); setError(""); setVoiceNotice(""); setVoiceConnecting(true);
     const generation = ++voiceGeneration.current;
     try {
       const context = await prepareAudio();
@@ -461,33 +467,36 @@ export default function Home() {
       capture.current = session; setVoiceOn(true); setVoiceConnecting(false); setVoiceMuted(false); setStage("ready");
     } catch (caught) {
       if (generation !== voiceGeneration.current) return;
-      setVoiceConnecting(false); setError(caught instanceof Error && caught.name !== "NotAllowedError" ? caught.message : "Microphone access was denied. Allow it in your browser settings, or type a question."); setStage("error");
+      setVoiceConnecting(false); setError(caught instanceof Error && caught.name !== "NotAllowedError" ? caught.message : "Microphone access was denied. Allow it in your browser settings, then start voice again."); setStage("error");
     }
   }
 
   function muteVoice() {
-    if (transcriptRef.current && !voiceMuted) editTranscript();
-    else { capture.current?.mute(!voiceMuted); setVoiceMuted(!voiceMuted); if (stage === "listening") setStage("ready"); }
+    if (!voiceMuted) { draft.current.hold(); if (reviewTimer.current) clearTimeout(reviewTimer.current); reviewTimer.current = null; showDraft(); }
+    capture.current?.mute(!voiceMuted); setVoiceMuted(!voiceMuted);
+    if (stage === "listening") setStage(draft.current.text ? "reviewing" : "ready");
   }
 
   function editTranscript() {
     if (reviewTimer.current) clearTimeout(reviewTimer.current);
-    reviewTimer.current = null; setEditingTranscript(true); capture.current?.mute(true); setVoiceMuted(true);
+    reviewTimer.current = null; draft.current.hold(); showDraft(); capture.current?.mute(true); setVoiceMuted(true);
   }
 
   function sendTranscript() {
-    const text = transcriptRef.current.trim(); if (!text) return;
+    const text = draft.current.text.trim(); if (!text || queuedTranscriptions.current || capture.current?.speaking) return;
     capture.current?.mute(false); setVoiceMuted(false); void ask(text);
   }
 
   function discardTranscript() {
-    interruptReply();
+    cancelIncoming(true); setError(""); setVoiceNotice("");
     capture.current?.mute(false); setVoiceMuted(false); setStage("ready");
   }
 
   actions.current = {
     speechStart: () => {
-      interruptReply(true); setError(""); setVoiceNotice(""); setStage("listening");
+      if (reviewTimer.current) clearTimeout(reviewTimer.current);
+      reviewTimer.current = null;
+      interruptReply(); setError(""); setVoiceNotice(""); setStage("listening");
     },
     utterance: (file, seconds) => {
       const signal = transcriptionGate.current.signal;
@@ -495,11 +504,13 @@ export default function Home() {
       transcriptionQueue.current = transcriptionQueue.current.then(() => transcribe(file, seconds, signal)).finally(() => {
         if (signal.aborted) return;
         queuedTranscriptions.current--;
-        if (!queuedTranscriptions.current && !capture.current?.speaking && continuedTranscript.current) {
-          const text = continuedTranscript.current;
-          transcriptRef.current = text; setTranscript(text); setEditingTranscript(false); setStage("reviewing");
-          reviewTimer.current = setTimeout(() => { if (!signal.aborted) actions.current.sendTranscript(); }, 1800);
-        }
+        showDraft();
+        if (queuedTranscriptions.current || capture.current?.speaking) return;
+        setStage(draft.current.text ? "reviewing" : draft.current.needsReview ? "error" : "ready");
+        if (draft.current.canAutoSend(queuedTranscriptions.current, !!capture.current?.speaking))
+          reviewTimer.current = setTimeout(() => {
+            if (!signal.aborted && draft.current.canAutoSend(queuedTranscriptions.current, !!capture.current?.speaking)) actions.current.sendTranscript();
+          }, 1800);
       });
     },
     stopped: reason => { if (capture.current || voiceConnecting) endVoice(reason); },
@@ -515,14 +526,15 @@ export default function Home() {
       signal.throwIfAborted();
       if (!response.ok) throw new Error(payload.error || "Transcription failed");
       if (payload.quota) setQuota(payload.quota);
-      if (!payload.text) throw new Error("No speech was detected. Please try again closer to the microphone.");
-      continuedTranscript.current = [continuedTranscript.current, payload.text].filter(Boolean).join(" ").slice(0, 2000);
-      if (payload.quota && payload.quota.voice.remainingSeconds < 1) { capture.current?.stop(); capture.current = null; setVoiceOn(false); setVoiceNotice("Voice allowance reached. You can review this transcript and continue by typing."); }
+      const appended = draft.current.append(payload.text);
+      if (!appended) setVoiceNotice(draft.current.text ? "That sound contained no words. Your recognized question is kept." : "I didn’t catch any words in that sound. I’m still listening — please try again.");
+      if (draft.current.needsReview && draft.current.text.length >= 2000) setVoiceNotice("Your question reached the 2,000-character limit. Please review it before sending.");
+      if (payload.quota && payload.quota.voice.remainingSeconds < 1) { capture.current?.stop(); capture.current = null; setVoiceOn(false); setVoiceNotice("Voice allowance reached. You can still send the recognized question."); }
     } catch (caught) {
       if (signal.aborted) return;
-      continuedTranscript.current = "";
+      draft.current.hold(); showDraft();
       capture.current?.mute(true); setVoiceMuted(true);
-      setError(caught instanceof Error ? caught.message : "Speech could not be transcribed."); setStage("error");
+      setError((caught instanceof Error ? caught.message : "Speech could not be transcribed.") + (draft.current.text ? " Your earlier words are kept below; review them before sending." : " Resume the microphone to try again.")); setStage("error");
     }
   }
 
@@ -581,7 +593,7 @@ export default function Home() {
     if (bookTransitionBlocked) return;
     turnGate.current.cancel(); clearTranscript(); setPendingQuestion(""); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
     summaries.current = {}; setContextNote("");
-    stopAudio(); setBook(null); setChunks([]); setExchanges([]); setQuestion("");
+    stopAudio(); setBook(null); setChunks([]); setExchanges([]);
     setActiveSource(null); setError(""); setProgress(0); setStage("idle");
   }
 
@@ -669,16 +681,15 @@ export default function Home() {
 
           <div className="composer-wrap">
             <VoiceSession active={voiceOn} connecting={voiceConnecting} level={voiceLevel} state={stage} muted={voiceMuted} transcript={transcript} editing={editingTranscript}
-              onEdit={editTranscript} onChange={text => { transcriptRef.current = text; setTranscript(text); }} onSend={sendTranscript} onDismiss={discardTranscript}
+              onEdit={editTranscript} onChange={text => { draft.current.edit(text); showDraft(); }} onSend={sendTranscript} onDismiss={discardTranscript}
               onMute={muteVoice} onFinish={() => capture.current?.finish()} onEnd={() => endVoice()} />
             {voiceNotice && <p className="voice-notice" role="status">{voiceNotice}</p>}
-            <div className="voice-toolbar">{book && !voiceOn && !voiceConnecting && <span>Start voice to talk hands-free</span>}{replayAvailable && ["ready", "error"].includes(stage) && <button onClick={() => void replayAudio()}><Play size={13} /> Play saved audio</button>}</div>
-            {(stage === "reading" || stage === "indexing") && <div className="progress-block"><span style={{ width: `${progress}%` }} /><p>{stageCopy[stage]} <b>{progress}%</b></p></div>}
-            <div className={`voice-composer ${stage === "listening" ? "is-listening" : ""}`}>
-              <button className="mic-button" onClick={() => void startRecording()} disabled={!book || ["reading", "indexing"].includes(stage) || !preferencesReady || !!openingBookId} aria-label={voiceOn || voiceConnecting ? "End voice conversation" : "Start voice conversation"} aria-pressed={voiceOn} title={!book ? "Choose or upload a book before asking by voice" : "Start or end hands-free voice"}>{voiceOn || voiceConnecting ? <Square size={19} fill="currentColor" /> : <Mic size={22} />}</button>
-              <form onSubmit={(event) => { event.preventDefault(); void ask(question); }}><label htmlFor="question">{stage === "listening" ? "Listening to your question…" : stageCopy[stage]}</label><input id="question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={book ? "Or type a question…" : "Choose or upload a book first"} disabled={!book || busy || stage === "listening"} /></form>
-              {["speaking", "voicing", "answering", "retrieving", "remembering", "transcribing"].includes(stage) ? <button className="send-button audio-control" onClick={() => interruptReply()} aria-label="Stop reply"><Square size={17} fill="currentColor" /></button> : <button className="send-button" onClick={() => void ask(question)} disabled={!question.trim() || !book || busy || stage === "listening"} aria-label="Send question"><ArrowUp size={18} /></button>}
+            <div className="voice-toolbar">
+              {book && !voiceOn && !voiceConnecting && !transcript && <button className="start-voice-button" onClick={() => void startRecording()} disabled={busy || !preferencesReady || !!openingBookId}><Mic size={18} /> Start voice conversation</button>}
+              {["speaking", "voicing", "answering", "retrieving", "remembering"].includes(stage) && <button onClick={interruptReply}><Square size={14} /> Stop reply</button>}
+              {replayAvailable && ["ready", "error"].includes(stage) && !transcript && <button onClick={() => void replayAudio()}><Play size={13} /> Play saved audio</button>}
             </div>
+            {(stage === "reading" || stage === "indexing") && <div className="progress-block"><span style={{ width: `${progress}%` }} /><p>{stageCopy[stage]} <b>{progress}%</b></p></div>}
             <p className="ai-disclosure">{contextNote || "短对话参考全部前文；长对话使用摘要并找回相关原始消息。"}<br />{preferences.rememberHistory ? `本机完整保留 ${exchanges.length} 轮对话` : "当前未开启跨会话保存"} · 回答和语音由 AI 生成，请核对原文引用。</p>
           </div>
         </section>

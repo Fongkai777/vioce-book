@@ -27,7 +27,7 @@ export class VoiceCapture {
     this.armIdle();
   }
   static async open(context: AudioContext, callbacks: Callbacks) {
-    if (!context.audioWorklet || !navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support voice mode. Please use a current browser or type your question.");
+    if (!context.audioWorklet || !navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support voice mode. Please use a current browser with microphone support.");
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     try { await context.audioWorklet.addModule("/voice-capture-worklet.js"); return new VoiceCapture(stream, context, callbacks); }
     catch (error) { stream.getTracks().forEach(track => track.stop()); throw error; }

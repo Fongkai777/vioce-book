@@ -10,6 +10,9 @@ export default function VoiceQA() {
   const [ready, setReady] = useState(false), [events, setEvents] = useState<string[]>([]);
   const input = useRef<{context:AudioContext;gain:GainNode}|null>(null);
   const delayed = useRef(false);
+  const scriptedResults = useRef<Array<string | null>>([]);
+  async function pulse() { const value=input.current;if(!value)return;await value.context.resume();value.gain.gain.value=.16;setTimeout(()=>{value.gain.gain.value=0;},500); }
+  function scenario(result:string | null) { scriptedResults.current=[result];void pulse(); }
   useEffect(() => {
     const originalFetch = window.fetch, originalMic = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     let stt = 0;
@@ -22,8 +25,11 @@ export default function VoiceQA() {
       if (path === "/api/transcribe") {
         stt++; const number = stt, form = options?.body as FormData;
         log(`Transcribe ${number}: ${(form.get("audio") as File).size} bytes`);
-        await new Promise(resolve => setTimeout(resolve, 500));
-        return Response.json({text:`Synthetic question ${number}: explain the book.`,quota});
+        const text = scriptedResults.current.length ? scriptedResults.current.shift() : `Synthetic question ${number}: explain the book.`;
+        await new Promise(resolve => setTimeout(resolve, 200));
+        log(text === null ? "Transcription request failed" : text ? `Recognized: ${text}` : "Empty transcription returned");
+        if (text === null) return Response.json({error:"Synthetic transcription service failure"},{status:503});
+        return Response.json({text,quota});
       }
       if (path === "/api/embed") return Response.json({embeddings:[[1,0]],quota});
       if (path === "/api/answer") {
@@ -48,5 +54,5 @@ export default function VoiceQA() {
     void saveBook("synthetic-voice-qa", {id:"qa-voice-book",name:"Synthetic voice test book",pages:1,chapters:1,chunks:1,fileSize:0,storedAt:new Date().toISOString(),lastOpenedAt:new Date().toISOString(),index:[{id:"qa-chunk",sectionTitle:"Read carefully",text:"Read carefully and ask questions about what the author means.",pageStart:1,pageEnd:1,embedding:[1,0]}]}).then(()=>setReady(true));
     return () => {window.fetch=originalFetch;navigator.mediaDevices.getUserMedia=originalMic;void input.current?.context.close();};
   },[]);
-  return <>{ready && <Home />}<aside style={{position:"fixed",right:6,top:90,zIndex:999,background:"#fff",border:"1px solid #333",padding:12,fontSize:11,maxWidth:260}}><strong>Synthetic voice QA — no real mic/API</strong><button onClick={async()=>{const value=input.current;if(!value)return;await value.context.resume();value.gain.gain.value=.16;setTimeout(()=>{value.gain.gain.value=0;},750);}}>Speak synthetic turn</button><button onClick={()=>{delayed.current=!delayed.current;setEvents(old=>[...old,`Slow replies: ${delayed.current}`]);}}>Toggle slow replies</button>{events.map((event,index)=><p key={index}>{event}</p>)}</aside></>;
+  return <>{ready && <Home />}<aside style={{position:"fixed",right:6,top:90,zIndex:999,background:"#fff",border:"1px solid #333",padding:12,fontSize:11,maxWidth:260}}><strong>Synthetic voice QA — no real mic/API</strong><button onClick={()=>{scriptedResults.current=[];void pulse();}}>Speak synthetic turn</button><button onClick={()=>scenario("")}>Empty sound only</button><button onClick={()=>scenario(null)}>Fail next turn</button><button onClick={()=>{delayed.current=!delayed.current;setEvents(old=>[...old,`Slow replies: ${delayed.current}`]);}}>Toggle slow replies</button>{events.map((event,index)=><p key={index}>{event}</p>)}</aside></>;
 }

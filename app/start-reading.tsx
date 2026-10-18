@@ -16,7 +16,7 @@ export default function StartReading({ books, disabled, openingBookId, onSelect,
   return <div className="welcome-state">
     <span className="welcome-kicker">Start with a book</span>
     <h1>Choose a book.<br /><i>Start a conversation.</i></h1>
-    <p>Choose a saved book from your library or upload a PDF.<br />Once it’s ready, ask a question by typing or speaking.</p>
+    <p>Choose a saved book from your library or upload a PDF.<br />Once it’s ready, start a voice conversation or choose a suggested question.</p>
     <div className="start-options">
       <button className="start-option" onClick={() => setChoosing(value => !value)} disabled={disabled || !books.length} aria-expanded={choosing} aria-controls="start-book-picker">
         <Library size={24} /><strong>Choose from library</strong>
