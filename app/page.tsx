@@ -4,14 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, BookOpen, ChevronRight, FileText, Headphones,
   Library, LoaderCircle, LogOut, Mic, Pause, Play, Plus, ShieldCheck, Sparkles,
-  Square, Trash2, Upload, Volume2, X,
+  Square, Trash2, Upload, UserRound, Volume2, X,
 } from "lucide-react";
 import {
   deleteBook, fingerprintBook, getBook, listBooks, markBookOpened, saveBook, summary,
   type BookSummary, type StoredBook, type StoredChunk,
 } from "@/lib/book-library";
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
-import { parseBookBundle } from "@/lib/book-import.mjs";
+import { formatQuotaDuration } from "@/lib/quota-display";
 import { defaultPreferences, retrievalQuestion, type Preferences } from "@/lib/personalization";
 import { clearHistory, loadHistory, loadSummaries, saveHistory, type SummaryCache } from "@/lib/reading-history";
 import { buildConversationContext } from "@/lib/conversation-context";
@@ -57,8 +57,6 @@ export default function Home() {
   const [libraryReady, setLibraryReady] = useState(false);
   const [openingBookId, setOpeningBookId] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importMessage, setImportMessage] = useState("");
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [question, setQuestion] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
@@ -72,8 +70,6 @@ export default function Home() {
   const summaries = useRef<SummaryCache>({});
   const [contextNote, setContextNote] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
-  const bundleInput = useRef<HTMLInputElement>(null);
-  const importLock = useRef(false);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioParts = useRef<Blob[]>([]);
   const audioPlayer = useRef<HTMLAudioElement | null>(null);
@@ -82,7 +78,7 @@ export default function Home() {
   const recordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const busy = !["idle", "ready", "error", "listening", "speaking"].includes(stage);
-  const bookTransitionBlocked = !preferencesReady || importing || !!openingBookId || !["idle", "ready", "error", "speaking"].includes(stage);
+  const bookTransitionBlocked = !preferencesReady || !!openingBookId || !["idle", "ready", "error", "speaking"].includes(stage);
   const latest = exchanges.at(-1);
   const currentSources = latest?.sources || [];
 
@@ -261,7 +257,7 @@ export default function Home() {
   }
 
   async function handleFile(file?: File) {
-    if (!file || bookTransitionBlocked || importLock.current) return;
+    if (!file || bookTransitionBlocked) return;
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       setError("Please choose a PDF file."); setStage("error"); return;
     }
@@ -311,42 +307,9 @@ export default function Home() {
     }
   }
 
-  async function importLibrary(file?: File) {
-    if (!file || bookTransitionBlocked || importLock.current) return;
-    const ownerId = quota?.user.userId;
-    if (!ownerId) return;
-    importLock.current = true;
-    setImporting(true);
-    setError("");
-    setImportMessage("Checking saved books…");
-    try {
-      if (file.size > 256 * 1024 * 1024) throw new Error("Library bundles must be smaller than 256 MB.");
-      // Validate the entire bundle before writing; imports never call OCR or embedding APIs.
-      const books = parseBookBundle(JSON.parse(await file.text()));
-      const existing = new Set((await listBooks(ownerId)).map((item) => item.id));
-      let added = 0;
-      for (const saved of books) {
-        if (existing.has(saved.id)) continue;
-        setImportMessage(`Saving ${saved.name}…`);
-        await saveBook(ownerId, saved);
-        added += 1;
-      }
-      setLibrary(await listBooks(ownerId));
-      void navigator.storage?.persist?.();
-      setImportMessage(`${added} books added · ${books.length - added} already saved. No re-indexing.`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Library import failed.");
-      setImportMessage("Import stopped. Saved books are safe; choose the same bundle to resume.");
-      setLibrary(await listBooks(ownerId));
-    } finally {
-      importLock.current = false;
-      setImporting(false);
-    }
-  }
-
   async function ask(rawQuestion: string, revision = "", original?: Exchange) {
     const cleanQuestion = rawQuestion.trim();
-    if (!cleanQuestion || !chunks.length || busy || importing || openingBookId || !preferencesReady) return;
+    if (!cleanQuestion || !chunks.length || busy || openingBookId || !preferencesReady) return;
     try {
       stopAudio(); setQuestion(""); setError(""); setStage("retrieving");
       const conversation = await buildConversationContext(cleanQuestion, exchanges, summaries.current, async text => {
@@ -480,15 +443,19 @@ export default function Home() {
   return (
     <main className="app-shell">
       <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file); }} />
-      <input ref={bundleInput} className="sr-only" type="file" accept="application/json,.json" aria-label="Import saved library file" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void importLibrary(file); }} />
       <header className="topbar">
         <button className="brand" onClick={resetBook} aria-label="Return to start"><span className="brand-mark"><BookOpen size={18} strokeWidth={2.4} /></span><span>VOICEBOOK</span></button>
-        <div className="quota-note">{quota ? <><b>{library.length}</b> local books · <b>{quota.questions.remaining}</b> questions · <b>{Math.floor(quota.voice.remainingSeconds / 60)}</b> voice min</> : <><span className="privacy-dot" /> Books and indexes stay in this browser</>}</div>
         <div className="topbar-actions">
           {quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}
-          <button className="library-toggle" onClick={() => setLibraryOpen((value) => !value)}><Library size={15} /> Library</button>
-          <button className="new-book" onClick={() => fileInput.current?.click()} disabled={bookTransitionBlocked}><Plus size={15} /> Add book</button>
-          <button className="icon-action" onClick={() => void logout()} aria-label={`Sign out ${quota?.user.username || "user"}`}><LogOut size={15} /></button>
+          <button className="library-toggle" onClick={() => setLibraryOpen((value) => !value)} aria-label="Library"><Library size={15} /><span>Library</span></button>
+          <div className="account-quota" role="status" aria-label="今日剩余额度" title="剩余额度 / 每日总额；语音格式为分:秒。每天新加坡时间 00:00 重置。">
+            <small>今日剩余 / 每日总额</small>
+            {quota ? <div><span>提问 <b>{quota.questions.remaining}</b> / {quota.questions.limit} 次</span><span>语音 <b>{formatQuotaDuration(quota.voice.remainingSeconds)}</b> / {formatQuotaDuration(quota.voice.limitSeconds)}</span></div> : <span>额度暂时无法加载</span>}
+          </div>
+          <div className="account-controls">
+            <span className="account-name" title={quota?.user.username}><UserRound size={15} /><span>{quota?.user.username || "账号"}</span></span>
+            <button className="icon-action" onClick={() => void logout()} aria-label={`Sign out ${quota?.user.username || "user"}`} title="退出登录"><LogOut size={15} /></button>
+          </div>
         </div>
       </header>
 
@@ -504,8 +471,6 @@ export default function Home() {
             </button>
             <button className="library-delete" onClick={() => void removeLibraryBook(item.id, item.name)} disabled={bookTransitionBlocked} aria-label={`Remove ${item.name}`}><Trash2 size={13} /></button>
           </div>)}</div> : <button className="upload-card library-empty" disabled={bookTransitionBlocked} onClick={() => fileInput.current?.click()}><span className="upload-icon"><Upload size={22} /></span><strong>Add your first book</strong><span>Its PDF and search index will stay in this browser.</span><em>Browse files</em></button>}
-          <button className="new-book library-import" disabled={bookTransitionBlocked} onClick={() => bundleInput.current?.click()}>{importing ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />} Import saved library</button>
-          {importMessage && <p className="library-import-status" role="status">{importMessage}</p>}
 
           <div className="method-note"><Sparkles size={15} /><p><strong>Stored locally</strong><br />PDF, chunks, and embeddings remain in this browser. Selecting a saved book does not re-index it.</p></div>
         </aside>
