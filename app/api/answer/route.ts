@@ -14,7 +14,8 @@ export async function POST(request: Request) {
     await consumeQuota(user, "question", 1);
 
     const evidence = contexts.map((context, index) => {
-      const pages = context.pageStart === context.pageEnd ? `p. ${context.pageStart}` : `pp. ${context.pageStart}-${context.pageEnd}`;
+      const pages = !context.pageStart ? "Imported passage; original page number unavailable" :
+        context.pageStart === context.pageEnd ? `p. ${context.pageStart}` : `pp. ${context.pageStart}-${context.pageEnd}`;
       return `[S${index + 1}] ${context.sectionTitle} (${pages})\n${context.text.slice(0, 4500)}`;
     }).join("\n\n");
     const config = getOpenAIConfig();

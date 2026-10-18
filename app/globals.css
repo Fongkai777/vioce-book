@@ -251,3 +251,5 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
   .create-user-card { grid-template-columns: 1fr; }
   .login-card { padding: 30px 24px; }
 }
+.library-import { width: 100%; margin-top: 14px; justify-content: center; }
+.library-import-status { font-size: 12px; line-height: 1.6; color: var(--muted, #6d756f); margin-top: 10px; }

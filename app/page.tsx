@@ -7,10 +7,11 @@ import {
   Square, Trash2, Upload, Volume2, X,
 } from "lucide-react";
 import {
-  deleteBook, fingerprintBook, getBook, listBooks, markBookOpened, saveBook,
+  deleteBook, fingerprintBook, getBook, listBooks, markBookOpened, saveBook, summary,
   type BookSummary, type StoredBook, type StoredChunk,
 } from "@/lib/book-library";
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
+import { parseBookBundle } from "@/lib/book-import.mjs";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
@@ -32,6 +33,7 @@ const stageCopy: Record<Stage, string> = {
 };
 
 function pageLabel(source: Source) {
+  if (!source.pageStart) return "Saved passage · page unavailable";
   return source.pageStart === source.pageEnd ? `p. ${source.pageStart}` : `pp. ${source.pageStart}–${source.pageEnd}`;
 }
 
@@ -50,6 +52,8 @@ export default function Home() {
   const [libraryReady, setLibraryReady] = useState(false);
   const [openingBookId, setOpeningBookId] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [question, setQuestion] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
@@ -59,6 +63,8 @@ export default function Home() {
   const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const bundleInput = useRef<HTMLInputElement>(null);
+  const importLock = useRef(false);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioParts = useRef<Blob[]>([]);
   const audioPlayer = useRef<HTMLAudioElement | null>(null);
@@ -67,7 +73,7 @@ export default function Home() {
   const recordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const busy = !["idle", "ready", "error", "listening", "speaking"].includes(stage);
-  const bookTransitionBlocked = !["idle", "ready", "error", "speaking"].includes(stage);
+  const bookTransitionBlocked = importing || !!openingBookId || !["idle", "ready", "error", "speaking"].includes(stage);
   const latest = exchanges.at(-1);
   const currentSources = latest?.sources || [];
 
@@ -154,13 +160,13 @@ export default function Home() {
     return { pages, totalPages: document.numPages };
   }
 
-  async function embedTexts(texts: string[]) {
+  async function embedTexts(texts: string[], model = "text-embedding-3-small") {
     const vectors: number[][] = [];
     const batchSize = 48;
     for (let index = 0; index < texts.length; index += batchSize) {
       const response = await fetch("/api/embed", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texts: texts.slice(index, index + batchSize) }),
+        body: JSON.stringify({ texts: texts.slice(index, index + batchSize), model }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Embedding failed");
@@ -171,8 +177,7 @@ export default function Home() {
   }
 
   function bookSummary(stored: StoredBook): BookSummary {
-    const { id, name, pages, chapters, chunks: chunkCount, fileSize, storedAt, lastOpenedAt } = stored;
-    return { id, name, pages, chapters, chunks: chunkCount, fileSize, storedAt, lastOpenedAt };
+    return summary(stored);
   }
 
   async function openStoredBook(bookId: string) {
@@ -192,8 +197,7 @@ export default function Home() {
       setProgress(100);
       setStage("ready");
       setLibraryOpen(false);
-      const opened = { ...stored, lastOpenedAt: new Date().toISOString() };
-      await markBookOpened(ownerId, opened);
+      await markBookOpened(ownerId, stored.id);
       setLibrary(await listBooks(ownerId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The saved book could not be opened.");
@@ -218,7 +222,7 @@ export default function Home() {
   }
 
   async function handleFile(file?: File) {
-    if (!file) return;
+    if (!file || bookTransitionBlocked || importLock.current) return;
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       setError("Please choose a PDF file."); setStage("error"); return;
     }
@@ -267,12 +271,48 @@ export default function Home() {
     }
   }
 
+  async function importLibrary(file?: File) {
+    if (!file || bookTransitionBlocked || importLock.current) return;
+    const ownerId = quota?.user.userId;
+    if (!ownerId) return;
+    importLock.current = true;
+    setImporting(true);
+    setError("");
+    setImportMessage("Checking saved books…");
+    try {
+      if (file.size > 256 * 1024 * 1024) throw new Error("Library bundles must be smaller than 256 MB.");
+      // Validate the entire bundle before writing; imports never call OCR or embedding APIs.
+      const books = parseBookBundle(JSON.parse(await file.text()));
+      const existing = new Set((await listBooks(ownerId)).map((item) => item.id));
+      let added = 0;
+      for (const saved of books) {
+        if (existing.has(saved.id)) continue;
+        setImportMessage(`Saving ${saved.name}…`);
+        await saveBook(ownerId, saved);
+        added += 1;
+      }
+      setLibrary(await listBooks(ownerId));
+      void navigator.storage?.persist?.();
+      setImportMessage(`${added} books added · ${books.length - added} already saved. No re-indexing.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Library import failed.");
+      setImportMessage("Import stopped. Saved books are safe; choose the same bundle to resume.");
+      setLibrary(await listBooks(ownerId));
+    } finally {
+      importLock.current = false;
+      setImporting(false);
+    }
+  }
+
   async function ask(rawQuestion: string) {
     const cleanQuestion = rawQuestion.trim();
-    if (!cleanQuestion || !chunks.length || busy) return;
+    if (!cleanQuestion || !chunks.length || busy || importing || openingBookId) return;
     try {
       stopAudio(); setQuestion(""); setError(""); setStage("retrieving");
-      const [queryEmbedding] = await embedTexts([cleanQuestion]); setProgress(100);
+      const [queryEmbedding] = await embedTexts([cleanQuestion], book?.embeddingModel); setProgress(100);
+      if (chunks.some((chunk) => chunk.embedding.length !== queryEmbedding.length)) {
+        throw new Error("The question vector does not match this book's saved index.");
+      }
       const retrieved = hybridRetrieve(cleanQuestion, queryEmbedding, chunks, 6) as Chunk[];
       setStage("answering");
       const response = await fetch("/api/answer", {
@@ -382,6 +422,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <input ref={fileInput} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleFile(file); }} />
+      <input ref={bundleInput} className="sr-only" type="file" accept="application/json,.json" aria-label="Import saved library file" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void importLibrary(file); }} />
       <header className="topbar">
         <button className="brand" onClick={resetBook} aria-label="Return to start"><span className="brand-mark"><BookOpen size={18} strokeWidth={2.4} /></span><span>VOICEBOOK</span></button>
         <div className="quota-note">{quota ? <><b>{library.length}</b> local books · <b>{quota.questions.remaining}</b> questions · <b>{Math.floor(quota.voice.remainingSeconds / 60)}</b> voice min</> : <><span className="privacy-dot" /> Books and indexes stay in this browser</>}</div>
@@ -401,15 +442,17 @@ export default function Home() {
           {library.length ? <div className="library-list">{library.map((item) => <div className={`library-item ${book?.id === item.id ? "active" : ""}`} key={item.id}>
             <button className="library-select" onClick={() => void openStoredBook(item.id)} disabled={bookTransitionBlocked || openingBookId === item.id}>
               <span className="library-book-icon">{openingBookId === item.id ? <LoaderCircle className="spin" size={15} /> : <BookOpen size={15} />}</span>
-              <span><strong>{item.name}</strong><small>{item.pages} pages · {item.chunks} passages</small></span>
+              <span><strong>{item.name}</strong><small>{item.pages ? `${item.pages} pages · ` : "Imported · "}{item.chunks} passages</small></span>
             </button>
             <button className="library-delete" onClick={() => void removeLibraryBook(item.id, item.name)} disabled={bookTransitionBlocked} aria-label={`Remove ${item.name}`}><Trash2 size={13} /></button>
-          </div>)}</div> : <button className="upload-card library-empty" onClick={() => fileInput.current?.click()}><span className="upload-icon"><Upload size={22} /></span><strong>Add your first book</strong><span>Its PDF and search index will stay in this browser.</span><em>Browse files</em></button>}
+          </div>)}</div> : <button className="upload-card library-empty" disabled={bookTransitionBlocked} onClick={() => fileInput.current?.click()}><span className="upload-icon"><Upload size={22} /></span><strong>Add your first book</strong><span>Its PDF and search index will stay in this browser.</span><em>Browse files</em></button>}
+          <button className="new-book library-import" disabled={bookTransitionBlocked} onClick={() => bundleInput.current?.click()}>{importing ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />} Import saved library</button>
+          {importMessage && <p className="library-import-status" role="status">{importMessage}</p>}
 
           {book && <div className="selected-book-card">
             <p className="eyebrow">Now reading</p>
             <div className="selected-book-title"><span><BookOpen size={18} /></span><strong>{book.name}</strong></div>
-            <div className="book-facts"><span><b>{book.pages}</b> pages</span><span><b>{book.chapters || "—"}</b> sections</span><span><b>{book.chunks}</b> passages</span></div>
+            <div className="book-facts"><span><b>{book.pages || "—"}</b> pages</span><span><b>{book.chapters || "—"}</b> sections</span><span><b>{book.chunks}</b> passages</span></div>
             <div className="index-ready"><Check size={14} /> Local index ready</div>
           </div>}
           <div className="method-note"><Sparkles size={15} /><p><strong>Stored locally</strong><br />PDF, chunks, and embeddings remain in this browser. Selecting a saved book does not re-index it.</p></div>

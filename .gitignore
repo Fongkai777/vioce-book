@@ -55,3 +55,6 @@ next-env.d.ts
 /outputs/
 /work/
 /public/pdf.worker.min.mjs
+# Local book exports must never be committed or published.
+/local-library/
+*.tsbuildinfo

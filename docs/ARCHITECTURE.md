@@ -31,6 +31,12 @@ The source book never needs to be stored on the server, which gives the prototyp
 
 For production, ingestion should become an asynchronous server job backed by object storage and a persistent vector database. Status events can stream to the client while parsing and embedding continue.
 
+### Local library schema and migration
+
+IndexedDB schema v2 uses `books` for metadata (owner, book ID, title, counts, model, dimensions, timestamps), `book-content` for text and vectors, and `book-files` for optional PDF blobs. Lists read only `books`. Selecting a book reads its metadata and content but not the PDF; updating its last-opened time changes only the metadata row. The v1 upgrade streams each old record through a cursor in a single upgrade transaction, so a failure rolls back the upgrade. All three stores use the same owner-scoped key and are deleted atomically for a removed book.
+
+Existing Copilot libraries enter through a versioned local JSON import. The importer validates model, dimension, IDs and finite vector values before saving. Copilot book queries use `text-embedding-v4` at 1024 dimensions via a server-side credential; ordinary uploaded PDFs use OpenAI `text-embedding-3-small` at 1536 dimensions. The API permits only these models and limits the Copilot path to one query per request. Neither raw imported books nor their indexes are sent to an API during import. Only question text goes to the embedding provider and retrieved excerpts go to the answer provider during a conversation.
+
 ## Retrieval strategy
 
 ### Structure before size

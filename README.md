@@ -6,6 +6,8 @@ Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder In
 
 - Browser-side PDF parsing with page provenance and OCR fallback for scanned pages; the original PDF is never stored on the app server.
 - A multi-book local library backed by IndexedDB, including each PDF, its chunks, and its embeddings.
+- Lightweight library metadata is separate from book content and PDF blobs, with an atomic migration from the original store.
+- Import existing Counseling Copilot text, chunks and vectors without OCR, splitting or re-embedding.
 - Instant switching between previously indexed books without repeating parsing or embedding calls.
 - Heading-aware section detection and overlapping structural chunks.
 - Hybrid retrieval: OpenAI embeddings + BM25 exact-match recall.
@@ -43,6 +45,8 @@ Open the local URL printed by the development server. Microphone access works on
 | `OPENAI_TTS_VOICE` | `coral` | Synthesized voice |
 | `ADMIN_USERNAME` | `admin` | Bootstrap administrator username |
 | `ADMIN_PASSWORD` | required | Bootstrap administrator password; configure as a hosted secret |
+| `COPILOT_EMBEDDING_API_KEY` | optional | Server-only credential for imported text-embedding-v4 query vectors |
+| `COPILOT_EMBEDDING_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Original imported-index embedding endpoint |
 
 Secrets stay in `.env.local`, which is ignored by Git. The browser only calls the application's server routes. User passwords are PBKDF2-hashed before they are stored in D1, and sessions use HttpOnly cookies.
 
@@ -62,6 +66,13 @@ After generating a schema migration with `pnpm db:generate`, apply it to local D
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing and answer-quality evaluation](docs/EVALUATION.md)
 - [AI-assisted workflow](docs/AI_WORKFLOW.md)
+
+## Import an existing local library
+
+Run `python3 scripts/export-copilot-library.py "/path/to/Counseling Copilot" "/path/to/voicebook/local-library/copilot.voicebook.json"`.
+The exporter reads the source SQLite database in read-only mode and copies existing LlamaIndex text nodes and vectors. It does not read credentials or call an API. Original source files remain untouched. Choose **Import saved library** in Voicebook and select the resulting JSON file. The browser validates and saves each book locally, skips existing book IDs, and can resume a partially completed import by selecting the same file again.
+
+The `local-library/` directory is ignored and is not included in the website's build. Do not place these files in `public/`. Each browser/account imports its own copy; they are not a shared hosted book catalog. Imported books retain their original `text-embedding-v4` / 1024-dimensional vectors; only each question gets a new vector through the configured original provider. New PDFs continue using `text-embedding-3-small`. Missing original PDF page provenance is explicitly displayed rather than guessed. The import contains processed text and vectors, not PDF originals.
 
 ## Scope and next steps
 
