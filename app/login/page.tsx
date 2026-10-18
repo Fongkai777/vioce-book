@@ -16,7 +16,7 @@ export default function LoginPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Login failed");
       const candidate = new URLSearchParams(window.location.search).get("returnTo") || "/";
       window.location.replace(candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : "/");

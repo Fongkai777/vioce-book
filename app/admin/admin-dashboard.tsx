@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import FeedbackList from "./feedback-list";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check, LoaderCircle, RefreshCw, ShieldCheck, UserPlus } from "lucide-react";
 
@@ -32,7 +33,7 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
     setLoading(true); setError("");
     try {
       const response = await fetch("/api/admin/users", { cache: "no-store" });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string; users: ManagedUser[]; date: string };
       if (!response.ok) throw new Error(payload.error || "Could not load users");
       setUsers(payload.users); setDate(payload.date);
     } catch (caught) {
@@ -43,7 +44,7 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
   useEffect(() => {
     let active = true;
     void fetch("/api/admin/users", { cache: "no-store" })
-      .then((response) => response.json().then((payload) => ({ response, payload })))
+      .then((response) => response.json().then((payload) => ({ response, payload: payload as { error?: string; users: ManagedUser[]; date: string } })))
       .then(({ response, payload }) => {
         if (!response.ok) throw new Error(payload.error || "Could not load users");
         if (active) { setUsers(payload.users); setDate(payload.date); }
@@ -71,7 +72,7 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
           voiceMinutesLimit: user.voiceSecondsLimit / 60,
         }),
       });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Could not save quota");
       setSaved(user.userId);
       window.setTimeout(() => setSaved((current) => current === user.userId ? null : current), 1800);
@@ -87,7 +88,7 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: newUsername, displayName: newDisplayName, password: newPassword }),
       });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Could not create user");
       setNewUsername(""); setNewDisplayName(""); setNewPassword("");
       await loadUsers();
@@ -125,6 +126,7 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
             <td><button className="save-quota" onClick={() => void saveUser(user)} disabled={saving === user.userId}>{saving === user.userId ? <LoaderCircle className="spin" size={15} /> : saved === user.userId ? <Check size={15} /> : "Save"}</button></td>
           </tr>)}</tbody>
         </table>{!users.length && <div className="admin-empty">Users will appear after they open Voicebook once.</div>}</div>}
+      <FeedbackList />
     </section>
   </main>;
 }

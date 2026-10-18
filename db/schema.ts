@@ -1,5 +1,23 @@
 import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export const readerPreferences = sqliteTable("reader_preferences", {
+  userId: text("user_id").primaryKey(),
+  settings: text("settings").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const answerFeedback = sqliteTable("answer_feedback", {
+  userId: text("user_id").notNull(),
+  exchangeId: text("exchange_id").notNull(),
+  bookName: text("book_name").notNull(),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  rating: text("rating").notNull(),
+  tags: text("tags").notNull(),
+  comment: text("comment").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, table => [primaryKey({ columns: [table.userId, table.exchangeId] })]);
+
 export const appUsers = sqliteTable("app_users", {
   userId: text("user_id").primaryKey(),
   email: text("email").notNull(),

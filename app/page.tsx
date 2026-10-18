@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, BookOpen, Check, ChevronRight, FileText, Headphones,
+  ArrowUp, BookOpen, ChevronRight, FileText, Headphones,
   Library, LoaderCircle, LogOut, Mic, Pause, Play, Plus, ShieldCheck, Sparkles,
   Square, Trash2, Upload, Volume2, X,
 } from "lucide-react";
@@ -12,6 +12,9 @@ import {
 } from "@/lib/book-library";
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
 import { parseBookBundle } from "@/lib/book-import.mjs";
+import { defaultPreferences, recentHistory, retrievalQuestion, type Preferences } from "@/lib/personalization";
+import { clearHistory, loadHistory, saveHistory } from "@/lib/reading-history";
+import { AnswerFeedback, ReaderSettings } from "./reader-controls";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
@@ -62,6 +65,8 @@ export default function Home() {
   const [isAudioPaused, setIsAudioPaused] = useState(false);
   const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const bundleInput = useRef<HTMLInputElement>(null);
   const importLock = useRef(false);
@@ -73,7 +78,7 @@ export default function Home() {
   const recordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const busy = !["idle", "ready", "error", "listening", "speaking"].includes(stage);
-  const bookTransitionBlocked = importing || !!openingBookId || !["idle", "ready", "error", "speaking"].includes(stage);
+  const bookTransitionBlocked = !preferencesReady || importing || !!openingBookId || !["idle", "ready", "error", "speaking"].includes(stage);
   const latest = exchanges.at(-1);
   const currentSources = latest?.sources || [];
 
@@ -86,7 +91,7 @@ export default function Home() {
 
   useEffect(() => {
     void fetch("/api/quota", { cache: "no-store" })
-      .then((response) => response.json().then((payload) => ({ response, payload })))
+      .then((response) => response.json().then((payload) => ({ response, payload: payload as { quota: QuotaSnapshot } })))
       .then(({ response, payload }) => {
         if (response.status === 401) {
           window.location.replace(`/login?returnTo=${encodeURIComponent(window.location.pathname)}`);
@@ -108,6 +113,30 @@ export default function Home() {
       .finally(() => { if (!cancelled) setLibraryReady(true); });
     return () => { cancelled = true; };
   }, [quota?.user.userId]);
+
+  useEffect(() => {
+    if (!quota?.user.userId) return;
+    void fetch("/api/preferences", { cache: "no-store" }).then(async response => {
+      const data = await response.json() as { preferences: Preferences; error?: string };
+      if (!response.ok) throw new Error(data.error || "偏好读取失败");
+      setPreferences(data.preferences); setPreferencesReady(true);
+      if (!data.preferences.rememberHistory) clearHistory(quota.user.userId);
+    }).catch(() => setError("阅读偏好暂时无法加载，请刷新后重试。"));
+  }, [quota?.user.userId]);
+
+  function clearReadingHistory() {
+    if (!quota || !window.confirm("清空这个账号在本机保存的全部对话？书籍和索引不受影响。")) return;
+    clearHistory(quota.user.userId); setExchanges([]); stopAudio();
+  }
+
+  async function savePreferences(next: Preferences) {
+    const response = await fetch("/api/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
+    const data = await response.json() as { preferences: Preferences; error?: string };
+    if (!response.ok) throw new Error(data.error || "偏好保存失败");
+    setPreferences(data.preferences);
+    if (!data.preferences.rememberHistory && quota) clearHistory(quota.user.userId);
+    if (data.preferences.rememberHistory && quota && book) saveHistory(quota.user.userId, book.id, exchanges);
+  }
 
   const sampleQuestions = useMemo(() => book ? [
     "What is the central argument of this book?",
@@ -168,7 +197,7 @@ export default function Home() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ texts: texts.slice(index, index + batchSize), model, purpose }),
       });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string; embeddings: number[][] };
       if (!response.ok) throw new Error(payload.error || "Embedding failed");
       vectors.push(...payload.embeddings);
       setProgress(45 + Math.round((Math.min(index + batchSize, texts.length) / texts.length) * 55));
@@ -191,7 +220,7 @@ export default function Home() {
       if (!stored) throw new Error("This book is no longer available in the local library.");
       setBook(bookSummary(stored));
       setChunks(stored.index);
-      setExchanges([]);
+      setExchanges(preferences.rememberHistory ? loadHistory<Exchange>(ownerId, bookId) : []);
       setQuestion("");
       setActiveSource(null);
       setProgress(100);
@@ -212,6 +241,7 @@ export default function Home() {
     if (!ownerId || bookTransitionBlocked || !window.confirm(`Remove “${name}” from this browser's library?`)) return;
     try {
       await deleteBook(ownerId, bookId);
+      clearHistory(ownerId, bookId);
       const books = await listBooks(ownerId);
       setLibrary(books);
       if (book?.id === bookId) resetBook();
@@ -304,26 +334,32 @@ export default function Home() {
     }
   }
 
-  async function ask(rawQuestion: string) {
+  async function ask(rawQuestion: string, revision = "", original?: Exchange) {
     const cleanQuestion = rawQuestion.trim();
-    if (!cleanQuestion || !chunks.length || busy || importing || openingBookId) return;
+    if (!cleanQuestion || !chunks.length || busy || importing || openingBookId || !preferencesReady) return;
     try {
       stopAudio(); setQuestion(""); setError(""); setStage("retrieving");
-      const [queryEmbedding] = await embedTexts([cleanQuestion], book?.embeddingModel, "query"); setProgress(100);
+      const history = recentHistory(original ? [] : exchanges);
+      const query = retrievalQuestion(cleanQuestion, history);
+      const [queryEmbedding] = await embedTexts([query], book?.embeddingModel, "query"); setProgress(100);
       if (chunks.some((chunk) => chunk.embedding.length !== queryEmbedding.length)) {
         throw new Error("The question vector does not match this book's saved index.");
       }
-      const retrieved = hybridRetrieve(cleanQuestion, queryEmbedding, chunks, 6) as Chunk[];
+      const retrieved = hybridRetrieve(query, queryEmbedding, chunks, 6) as Chunk[];
       setStage("answering");
       const response = await fetch("/api/answer", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: cleanQuestion, contexts: retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text })) }),
+        body: JSON.stringify({ question: cleanQuestion, history: original ? recentHistory([original]) : history, revision, contexts: retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text })) }),
       });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string; answer: string; quota?: QuotaSnapshot };
       if (!response.ok) throw new Error(payload.error || "Answer generation failed");
       if (payload.quota) setQuota(payload.quota);
       const sources = retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text }));
-      setExchanges((items) => [...items, { id: crypto.randomUUID(), question: cleanQuestion, answer: payload.answer, sources }]);
+      const next = [...exchanges, { id: crypto.randomUUID(), question: cleanQuestion, answer: payload.answer, sources }];
+      setExchanges(next);
+      if (preferences.rememberHistory && quota && book) {
+        try { saveHistory(quota.user.userId, book.id, next); } catch { setError("回答已生成，但本机空间不足，历史未能保存。"); }
+      }
       const spokenAnswer = String(payload.answer).replace(/\[S\d+\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
       await speak(spokenAnswer);
     } catch (caught) {
@@ -373,7 +409,7 @@ export default function Home() {
       setStage("transcribing");
       const form = new FormData(); form.append("audio", audio); form.append("durationSeconds", String(durationSeconds));
       const response = await fetch("/api/transcribe", { method: "POST", body: form });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string; text: string; quota?: QuotaSnapshot };
       if (!response.ok) throw new Error(payload.error || "Transcription failed");
       if (payload.quota) setQuota(payload.quota);
       if (!payload.text) throw new Error("No speech was detected. Please try again closer to the microphone.");
@@ -388,7 +424,7 @@ export default function Home() {
     const response = await fetch("/api/speech", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
     });
-    if (!response.ok) { const payload = await response.json(); throw new Error(payload.error || "Speech generation failed"); }
+    if (!response.ok) { const payload = await response.json() as { error?: string }; throw new Error(payload.error || "Speech generation failed"); }
     const url = URL.createObjectURL(await response.blob());
     const player = new Audio(url);
     player.onended = () => { URL.revokeObjectURL(url); setIsAudioPaused(false); setStage("ready"); };
@@ -449,16 +485,14 @@ export default function Home() {
           <button className="new-book library-import" disabled={bookTransitionBlocked} onClick={() => bundleInput.current?.click()}>{importing ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />} Import saved library</button>
           {importMessage && <p className="library-import-status" role="status">{importMessage}</p>}
 
-          {book && <div className="selected-book-card">
-            <p className="eyebrow">Now reading</p>
-            <div className="selected-book-title"><span><BookOpen size={18} /></span><strong>{book.name}</strong></div>
-            <div className="book-facts"><span><b>{book.pages || "—"}</b> pages</span><span><b>{book.chapters || "—"}</b> sections</span><span><b>{book.chunks}</b> passages</span></div>
-            <div className="index-ready"><Check size={14} /> Local index ready</div>
-          </div>}
           <div className="method-note"><Sparkles size={15} /><p><strong>Stored locally</strong><br />PDF, chunks, and embeddings remain in this browser. Selecting a saved book does not re-index it.</p></div>
         </aside>
 
         <section className="conversation-panel">
+          <div className="reading-header">
+            <div className="reading-title"><BookOpen size={20} /><div><p className="eyebrow">Now reading</p><strong>{book?.name || "选择一本书，开始对话"}</strong>{book && <small>{book.chunks} passages · Local index ready</small>}</div></div>
+            <ReaderSettings preferences={preferences} onSave={savePreferences} onClear={clearReadingHistory} disabled={!preferencesReady || bookTransitionBlocked} />
+          </div>
           <div className="conversation-scroll">
             {!book && stage === "idle" ? <div className="welcome-state">
               <span className="welcome-kicker">Your local reading library</span><h1>{library.length ? <>Choose a book.<br /><i>Pick up</i> where you left off.</> : <>Don’t search the book.<br /><i>Talk</i> to it.</>}</h1>
@@ -474,6 +508,11 @@ export default function Home() {
               <div className="answer-row"><div className="answer-label"><span className="mini-mark"><Volume2 size={13} /></span> Voicebook</div>
                 <AnswerText text={exchange.answer} onCitation={(index) => setActiveSource(exchange.sources[index] || null)} />
                 <div className="source-strip">{exchange.sources.slice(0, 4).map((source, index) => <button key={source.id} onClick={() => setActiveSource(source)}><b>{index + 1}</b>{pageLabel(source)} · {source.sectionTitle}</button>)}</div>
+                <AnswerFeedback exchange={exchange} bookName={book?.name || ""} disabled={bookTransitionBlocked || !preferencesReady} onRewrite={instruction => void ask(exchange.question, instruction, exchange)} onRemember={async instruction => {
+                  const guidance = [preferences.guidance, instruction].filter(Boolean).join("\n");
+                  if (guidance.length > 600) throw new Error("偏好超过 600 字，请先到阅读偏好中整理。");
+                  await savePreferences({ ...preferences, guidance });
+                }} />
               </div>
             </article>)}</div>}
             {busy && <div className="thinking-card"><LoaderCircle className="spin" size={18} /><div><strong>{stageCopy[stage]}</strong><span>{stage === "retrieving" ? "Combining semantic and exact-match signals" : "This usually takes a few seconds"}</span></div></div>}
