@@ -37,6 +37,8 @@ IndexedDB schema v2 uses `books` for metadata (owner, book ID, title, counts, mo
 
 Existing Copilot libraries enter through a versioned local JSON import. The importer validates model, dimension, IDs and finite vector values before saving. Copilot book queries use `text-embedding-v4` at 1024 dimensions via a server-side credential; ordinary uploaded PDFs use OpenAI `text-embedding-3-small` at 1536 dimensions. The API permits only these models and limits the Copilot path to one query per request. Neither raw imported books nor their indexes are sent to an API during import. Only question text goes to the embedding provider and retrieved excerpts go to the answer provider during a conversation.
 
+Question search is metered separately from book indexing, so exhausting OCR/indexing allowance does not block cached books. A query is limited to 2,000 characters, requires remaining daily questions, and atomically consumes one query-search allowance. Search calls are capped at twice the user's configured question limit to allow retries; completed answer requests still consume the original question allowance.
+
 ## Retrieval strategy
 
 ### Structure before size

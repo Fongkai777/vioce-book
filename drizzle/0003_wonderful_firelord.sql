@@ -1,0 +1,1 @@
+ALTER TABLE `daily_usage` ADD `query_embedding_count` integer DEFAULT 0 NOT NULL;

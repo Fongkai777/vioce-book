@@ -160,13 +160,13 @@ export default function Home() {
     return { pages, totalPages: document.numPages };
   }
 
-  async function embedTexts(texts: string[], model = "text-embedding-3-small") {
+  async function embedTexts(texts: string[], model = "text-embedding-3-small", purpose = "index") {
     const vectors: number[][] = [];
     const batchSize = 48;
     for (let index = 0; index < texts.length; index += batchSize) {
       const response = await fetch("/api/embed", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texts: texts.slice(index, index + batchSize), model }),
+        body: JSON.stringify({ texts: texts.slice(index, index + batchSize), model, purpose }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Embedding failed");
@@ -309,7 +309,7 @@ export default function Home() {
     if (!cleanQuestion || !chunks.length || busy || importing || openingBookId) return;
     try {
       stopAudio(); setQuestion(""); setError(""); setStage("retrieving");
-      const [queryEmbedding] = await embedTexts([cleanQuestion], book?.embeddingModel); setProgress(100);
+      const [queryEmbedding] = await embedTexts([cleanQuestion], book?.embeddingModel, "query"); setProgress(100);
       if (chunks.some((chunk) => chunk.embedding.length !== queryEmbedding.length)) {
         throw new Error("The question vector does not match this book's saved index.");
       }

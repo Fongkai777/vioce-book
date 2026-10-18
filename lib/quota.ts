@@ -9,7 +9,7 @@ export const DEFAULT_VOICE_SECONDS_LIMIT = 10 * 60;
 const DAILY_EMBEDDING_CHARACTER_LIMIT = 750_000;
 const DAILY_SPEECH_CHARACTER_LIMIT = 50_000;
 
-type Meter = "question" | "voice" | "embedding" | "speech";
+type Meter = "question" | "voice" | "embedding" | "queryEmbedding" | "speech";
 
 export type QuotaSnapshot = {
   date: string;
@@ -107,13 +107,18 @@ export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: numbe
       column: "embedding_characters", limit: String(DAILY_EMBEDDING_CHARACTER_LIMIT),
       message: "Your daily book indexing allowance has been reached",
     },
+    queryEmbedding: {
+      column: "query_embedding_count",
+      limit: `(2 * COALESCE((SELECT question_limit FROM quota_overrides WHERE user_id = ?), ${DEFAULT_QUESTION_LIMIT}))`,
+      message: "Your daily question search allowance has been reached",
+    },
     speech: {
       column: "speech_characters", limit: String(DAILY_SPEECH_CHARACTER_LIMIT),
       message: "Your daily speech playback allowance has been reached",
     },
   } satisfies Record<Meter, { column: string; limit: string; message: string }>;
   const spec = specs[meter];
-  const usesOverride = meter === "question" || meter === "voice";
+  const usesOverride = meter === "question" || meter === "voice" || meter === "queryEmbedding";
   const statement = database().prepare(`
     UPDATE daily_usage
     SET ${spec.column} = ${spec.column} + ?, updated_at = ?

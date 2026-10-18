@@ -38,6 +38,7 @@ export const dailyUsage = sqliteTable("daily_usage", {
   questionCount: integer("question_count").notNull().default(0),
   voiceSeconds: integer("voice_seconds").notNull().default(0),
   embeddingCharacters: integer("embedding_characters").notNull().default(0),
+  queryEmbeddingCount: integer("query_embedding_count").notNull().default(0),
   speechCharacters: integer("speech_characters").notNull().default(0),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.usageDate] })]);

@@ -1,9 +1,11 @@
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
-import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
+import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { texts?: unknown; model?: unknown };
+    const body = (await request.json()) as { texts?: unknown; model?: unknown; purpose?: unknown };
+    const purpose = body.purpose ?? "index";
+    if (purpose !== "query" && purpose !== "index") return jsonError(new Error("Invalid embedding purpose"), 400);
     const model = body.model ?? "text-embedding-3-small";
     if (model !== "text-embedding-3-small" && model !== "text-embedding-v4") {
       return jsonError(new Error("Unsupported embedding model"), 400);
@@ -12,17 +14,27 @@ export async function POST(request: Request) {
       return jsonError(new Error("texts must contain 1 to 64 items"), 400);
     }
     const texts = body.texts.map((text) => String(text).slice(0, 12000));
+    if (purpose === "query" && (texts.length !== 1 || !texts[0].trim() || texts[0].length > 2000)) {
+      return jsonError(new Error("Questions must contain 1 to 2000 characters"), 400);
+    }
     const user = await requireApiUser();
     const config = getOpenAIConfig();
     const legacy = model === "text-embedding-v4";
     // Existing imported books only need a query vector, never a new document index.
-    if (legacy && texts.length !== 1) return jsonError(new Error("Imported-book embedding accepts one question"), 400);
+    if (legacy && purpose !== "query") return jsonError(new Error("Imported-book embedding only accepts questions"), 400);
     const apiKey = legacy ? process.env.COPILOT_EMBEDDING_API_KEY : config.apiKey;
     if (!apiKey) return jsonError(new Error("Imported-book query embedding is not configured"), 503);
     const baseUrl = legacy
       ? (process.env.COPILOT_EMBEDDING_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "")
       : config.baseUrl;
-    await consumeQuota(user, "embedding", texts.reduce((total, text) => total + text.length, 0));
+    if (purpose === "query") {
+      if ((await getQuotaSnapshot(user)).questions.remaining < 1) {
+        return jsonError(new Error("Your daily question limit has been reached"), 429);
+      }
+      await consumeQuota(user, "queryEmbedding", 1);
+    } else {
+      await consumeQuota(user, "embedding", texts.reduce((total, text) => total + text.length, 0));
+    }
     const upstream = await fetch(`${baseUrl}/embeddings`, {
       method: "POST",
       headers: { ...authHeaders(apiKey), "Content-Type": "application/json" },
