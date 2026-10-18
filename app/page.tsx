@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, BookOpen, ChevronRight, FileText, Headphones,
+  ArrowUp, BookOpen, FileText, Headphones,
   Library, LoaderCircle, LogOut, Mic, Pause, Play, Plus, ShieldCheck, Sparkles,
   Square, Trash2, Upload, UserRound, Volume2, X,
 } from "lucide-react";
@@ -16,6 +16,7 @@ import { defaultPreferences, retrievalQuestion, type Preferences } from "@/lib/p
 import { clearHistory, loadHistory, loadSummaries, saveHistory, type SummaryCache } from "@/lib/reading-history";
 import { buildConversationContext } from "@/lib/conversation-context";
 import { AnswerFeedback, ReaderSettings } from "./reader-controls";
+import StartReading from "./start-reading";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
@@ -29,7 +30,7 @@ type QuotaSnapshot = {
 };
 
 const stageCopy: Record<Stage, string> = {
-  idle: "Upload a book to begin", reading: "Reading pages and using OCR when needed…",
+  idle: "先选择或上传一本书", reading: "Reading pages and using OCR when needed…",
   indexing: "Building the book index…", ready: "Ready for your question",
   listening: "Listening… tap to finish", transcribing: "Turning speech into text…",
   retrieving: "Finding the best passages…", answering: "Composing a grounded answer…",
@@ -351,7 +352,7 @@ export default function Home() {
   }
 
   async function startRecording() {
-    if (!book) return fileInput.current?.click();
+    if (!book || !preferencesReady || openingBookId) return;
     if (stage === "listening") return stopRecording();
     if (busy) return;
     try {
@@ -477,16 +478,11 @@ export default function Home() {
 
         <section className="conversation-panel">
           <div className="reading-header">
-            <div className="reading-title"><BookOpen size={20} /><div><p className="eyebrow">Now reading</p><strong>{book?.name || "选择一本书，开始对话"}</strong>{book && <small>{book.chunks} passages · Local index ready</small>}</div></div>
+            <div className="reading-title"><BookOpen size={20} /><div><p className="eyebrow">Now reading</p><strong>{book?.name || "选择或上传一本书，开始对话"}</strong>{book && <small>{book.chunks} passages · Local index ready</small>}</div></div>
             <ReaderSettings preferences={preferences} onSave={savePreferences} onClear={clearReadingHistory} disabled={!preferencesReady || bookTransitionBlocked} />
           </div>
           <div className="conversation-scroll">
-            {!book && stage === "idle" ? <div className="welcome-state">
-              <span className="welcome-kicker">Your local reading library</span><h1>{library.length ? <>Choose a book.<br /><i>Pick up</i> where you left off.</> : <>Don’t search the book.<br /><i>Talk</i> to it.</>}</h1>
-              <p>{library.length ? "Select a saved book from your library. Its passages and embeddings are already ready for conversation." : "Upload a PDF once. Voicebook keeps its content and search index locally for your next conversation."}</p>
-              <button className="primary-action" onClick={() => library.length ? setLibraryOpen(true) : fileInput.current?.click()}>{library.length ? <Library size={17} /> : <FileText size={17} />} {library.length ? "Choose from library" : "Add a PDF book"}</button>
-              <div className="flow-line"><span>01 Add</span><ChevronRight size={13} /><span>02 Choose</span><ChevronRight size={13} /><span>03 Ask</span></div>
-            </div> : exchanges.length === 0 ? <div className="ready-state">
+            {!book ? <StartReading books={library} disabled={bookTransitionBlocked} openingBookId={openingBookId} onSelect={openStoredBook} onUpload={() => fileInput.current?.click()} /> : exchanges.length === 0 ? <div className="ready-state">
               <div className="orb-small"><Headphones size={28} /></div><p className="eyebrow">The book is listening</p><h2>What would you like to understand?</h2>
               <p>Ask about an argument, event, character, definition, or connection across chapters.</p>
               <div className="sample-grid">{sampleQuestions.map((sample) => <button key={sample} onClick={() => void ask(sample)}>{sample}<ArrowUp size={13} /></button>)}</div>
@@ -510,8 +506,8 @@ export default function Home() {
           <div className="composer-wrap">
             {(stage === "reading" || stage === "indexing") && <div className="progress-block"><span style={{ width: `${progress}%` }} /><p>{stageCopy[stage]} <b>{progress}%</b></p></div>}
             <div className={`voice-composer ${stage === "listening" ? "is-listening" : ""}`}>
-              <button className="mic-button" onClick={() => void startRecording()} disabled={busy} aria-label={stage === "listening" ? "Stop recording" : "Ask with microphone"}>{stage === "listening" ? <Square size={19} fill="currentColor" /> : <Mic size={22} />}{stage === "listening" && <span className="pulse-ring" />}</button>
-              <form onSubmit={(event) => { event.preventDefault(); void ask(question); }}><label htmlFor="question">{stage === "listening" ? "Listening to your question…" : stageCopy[stage]}</label><input id="question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={book ? "Or type a question…" : "Upload a book first"} disabled={!book || busy || stage === "listening"} /></form>
+              <button className="mic-button" onClick={() => void startRecording()} disabled={!book || busy || !preferencesReady || !!openingBookId} aria-label={stage === "listening" ? "Stop recording" : "Ask with microphone"} title={!book ? "选择或上传一本书后，即可语音提问" : undefined}>{stage === "listening" ? <Square size={19} fill="currentColor" /> : <Mic size={22} />}{stage === "listening" && <span className="pulse-ring" />}</button>
+              <form onSubmit={(event) => { event.preventDefault(); void ask(question); }}><label htmlFor="question">{stage === "listening" ? "Listening to your question…" : stageCopy[stage]}</label><input id="question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={book ? "Or type a question…" : "选书或上传后，在这里提问"} disabled={!book || busy || stage === "listening"} /></form>
               {stage === "speaking" ? <button className="send-button audio-control" onClick={toggleAudio} aria-label={isAudioPaused ? "Resume audio" : "Pause audio"}>{isAudioPaused ? <Play size={17} fill="currentColor" /> : <Pause size={17} fill="currentColor" />}</button> : <button className="send-button" onClick={() => void ask(question)} disabled={!question.trim() || !book || busy} aria-label="Send question"><ArrowUp size={18} /></button>}
             </div>
             <p className="ai-disclosure">{contextNote || "短对话参考全部前文；长对话使用摘要并找回相关原始消息。"}<br />{preferences.rememberHistory ? `本机完整保留 ${exchanges.length} 轮对话` : "当前未开启跨会话保存"} · 回答和语音由 AI 生成，请核对原文引用。</p>
