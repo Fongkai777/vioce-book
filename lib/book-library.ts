@@ -159,6 +159,30 @@ export async function markBookOpened(ownerId: string, bookId: string) {
   }
 }
 
+// Atomic insert-only copy: a repeated or concurrent sample import must never overwrite
+// an account's existing book or index. Account identity always comes from the caller.
+export async function saveBookIfMissing(ownerId: string, book: Omit<StoredBook, "ownerId" | "storageKey">) {
+  if (!ownerId) throw new Error("Sign in before saving a book.");
+  const database = await openLibrary();
+  try {
+    const transaction = database.transaction([BOOK_STORE, CONTENT_STORE, PDF_STORE], "readwrite");
+    const completion = transactionDone(transaction);
+    const storageKey = `${ownerId}:${book.id}`;
+    const store = transaction.objectStore(BOOK_STORE);
+    const request = store.get(storageKey);
+    let added = false;
+    request.onsuccess = () => {
+      if (request.result) return;
+      store.add({ ...summary(book), ownerId, storageKey });
+      transaction.objectStore(CONTENT_STORE).add({ storageKey, index: book.index, fullText: book.fullText });
+      if (book.pdf) transaction.objectStore(PDF_STORE).add({ storageKey, pdf: book.pdf });
+      added = true;
+    };
+    await completion;
+    return added;
+  } finally { database.close(); }
+}
+
 export async function deleteBook(ownerId: string, bookId: string) {
   const database = await openLibrary();
   try {

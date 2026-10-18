@@ -23,6 +23,37 @@ async function call(path, cookie = "", method = "GET", body) {
 try {
 const admin = session("admin");
 const reader = session("user");
+assert.equal((await call("/api/samples")).response.status, 401);
+const quotaBeforeSamples = (await call("/api/quota", reader)).data.quota;
+const catalog = await call("/api/samples", reader);
+assert.equal(catalog.response.status, 200);
+assert.equal(catalog.data.samples.length, 2);
+assert.ok(catalog.data.samples.every(book => book.id.startsWith("sample-") && !book.index && !book.fullText && !book.ownerId));
+const sample = await call(`/api/samples?id=${catalog.data.samples[0].id}`, reader);
+assert.equal(sample.response.status, 200);
+assert.equal(sample.response.headers.get("cache-control"), "private, no-store");
+assert.equal(sample.data.books.length, 1);
+assert.equal(sample.data.books[0].index[0].embedding.length, 1536);
+assert.equal((await call(`/api/samples?id=${catalog.data.samples[0].id}`)).response.status, 401);
+assert.equal((await call("/api/samples?id=private-book", reader)).response.status, 404);
+assert.equal((await fetch(origin + "/api/samples", { method: "POST", headers: { Cookie: reader } })).status, 405);
+assert.deepEqual((await call("/api/quota", reader)).data.quota, quotaBeforeSamples);
+console.log("PASS: authenticated read-only sample catalog, prebuilt vectors, unknown-book rejection, and zero quota usage on selection.");
+if (process.argv.includes("--with-sample-model")) {
+  const question = catalog.data.samples[0].suggestedQuestion;
+  const query = await call("/api/embed", reader, "POST", { texts: [question], model: sample.data.books[0].embeddingModel, purpose: "query" });
+  assert.equal(query.response.status, 200, query.data.error);
+  const vector = query.data.embeddings[0];
+  const ranked = sample.data.books[0].index.map(chunk => ({ chunk, score: chunk.embedding.reduce((sum, value, i) => sum + value * vector[i], 0) })).sort((a,b) => b.score - a.score);
+  assert.match(ranked[0].chunk.sectionTitle, /notes/i);
+  const result = await call("/api/answer", reader, "POST", { question, contexts: ranked.slice(0, 3).map(({chunk: {embedding, ...chunk}}) => chunk) });
+  assert.equal(result.response.status, 200, result.data.error);
+  assert.match(result.data.answer, /\[S\d+\]/);
+  assert.match(result.data.answer, /claim/i);
+  assert.match(result.data.answer, /location|page|source/i);
+  assert.match(result.data.answer, /question|reaction/i);
+  console.log("PASS: live sample query retrieves the correct pre-indexed chapter and answers with all three note components and citations.");
+}
 const defaults = (await call("/api/preferences", reader)).data.preferences;
 assert.equal(defaults.rememberHistory, true);
 const settings = { tone: "friendly", length: "brief", guidance: "先给结论", rememberHistory: true };

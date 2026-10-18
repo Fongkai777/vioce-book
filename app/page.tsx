@@ -17,6 +17,8 @@ import { clearHistory, loadHistory, loadSummaries, saveHistory, type SummaryCach
 import { buildConversationContext } from "@/lib/conversation-context";
 import { AnswerFeedback, ReaderSettings } from "./reader-controls";
 import StartReading from "./start-reading";
+import SampleLibrary from "./sample-library";
+import { addSampleToLibrary } from "@/lib/sample-library";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
@@ -58,6 +60,8 @@ export default function Home() {
   const [libraryReady, setLibraryReady] = useState(false);
   const [openingBookId, setOpeningBookId] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [sampleLibraryOpen, setSampleLibraryOpen] = useState(false);
+  const [sampleError, setSampleError] = useState("");
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [question, setQuestion] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
@@ -211,14 +215,15 @@ export default function Home() {
     return summary(stored);
   }
 
-  async function openStoredBook(bookId: string) {
+  async function openStoredBook(bookId: string, fromSample = false) {
     const ownerId = quota?.user.userId;
     if (!ownerId || bookTransitionBlocked) return;
     try {
       setOpeningBookId(bookId);
+      setSampleError("");
       stopAudio();
       setError("");
-      const stored = await getBook(ownerId, bookId);
+      const stored = fromSample ? await addSampleToLibrary(ownerId, bookId) : await getBook(ownerId, bookId);
       if (!stored) throw new Error("This book is no longer available in the local library.");
       const history = preferences.rememberHistory ? await loadHistory<Exchange>(ownerId, bookId) : [];
       const memory = preferences.rememberHistory ? await loadSummaries(ownerId, bookId) : {};
@@ -232,10 +237,12 @@ export default function Home() {
       setProgress(100);
       setStage("ready");
       setLibraryOpen(false);
+      setSampleLibraryOpen(false);
       await markBookOpened(ownerId, stored.id);
       setLibrary(await listBooks(ownerId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The saved book could not be opened.");
+      if (fromSample) setSampleError(caught instanceof Error ? caught.message : "The sample could not be opened.");
       setStage("error");
     } finally {
       setOpeningBookId(null);
@@ -468,12 +475,13 @@ export default function Home() {
           {library.length ? <div className="library-list">{library.map((item) => <div className={`library-item ${book?.id === item.id ? "active" : ""}`} key={item.id}>
             <button className="library-select" onClick={() => void openStoredBook(item.id)} disabled={bookTransitionBlocked || openingBookId === item.id}>
               <span className="library-book-icon">{openingBookId === item.id ? <LoaderCircle className="spin" size={15} /> : <BookOpen size={15} />}</span>
-              <span><strong>{item.name}</strong><small>{item.pages ? `${item.pages} pages · ` : "Imported · "}{item.chunks} passages</small></span>
+              <span><strong>{item.name}</strong><small>{item.importedFrom === "Voicebook sample" ? "Sample · " : item.pages ? `${item.pages} pages · ` : "Imported · "}{item.chunks} passages</small></span>
             </button>
             <button className="library-delete" onClick={() => void removeLibraryBook(item.id, item.name)} disabled={bookTransitionBlocked} aria-label={`Remove ${item.name}`}><Trash2 size={13} /></button>
           </div>)}</div> : <button className="upload-card library-empty" disabled={bookTransitionBlocked} onClick={() => fileInput.current?.click()}><span className="upload-icon"><Upload size={22} /></span><strong>Add your first book</strong><span>Its PDF and search index will stay in this browser.</span><em>Browse files</em></button>}
 
-          <div className="method-note"><Sparkles size={15} /><p><strong>Stored locally</strong><br />PDF, chunks, and embeddings remain in this browser. Selecting a saved book does not re-index it.</p></div>
+          <button className="sample-entry sidebar-samples" disabled={bookTransitionBlocked} onClick={() => { setSampleError(""); setSampleLibraryOpen(true); }}><BookOpen size={16} /> Browse sample books</button>
+          <div className="method-note"><Sparkles size={15} /><p><strong>Stored locally · Account-specific</strong><br />Your books, indexes, and chats stay in this browser under your account. Sample books are read-only templates, not a shared personal library.</p></div>
         </aside>
 
         <section className="conversation-panel">
@@ -482,7 +490,7 @@ export default function Home() {
             <ReaderSettings preferences={preferences} onSave={savePreferences} onClear={clearReadingHistory} disabled={!preferencesReady || bookTransitionBlocked} />
           </div>
           <div className="conversation-scroll">
-            {!book ? <StartReading books={library} disabled={bookTransitionBlocked} openingBookId={openingBookId} onSelect={openStoredBook} onUpload={() => fileInput.current?.click()} /> : exchanges.length === 0 ? <div className="ready-state">
+            {!book ? <StartReading books={library} disabled={bookTransitionBlocked} openingBookId={openingBookId} onSelect={openStoredBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} /> : exchanges.length === 0 ? <div className="ready-state">
               <div className="orb-small"><Headphones size={28} /></div><p className="eyebrow">The book is listening</p><h2>What would you like to understand?</h2>
               <p>Ask about an argument, event, character, definition, or connection across chapters.</p>
               <div className="sample-grid">{sampleQuestions.map((sample) => <button key={sample} onClick={() => void ask(sample)}>{sample}<ArrowUp size={13} /></button>)}</div>
@@ -521,6 +529,7 @@ export default function Home() {
       </section>
 
       {activeSource && <div className="source-drawer-backdrop" onClick={() => setActiveSource(null)}><article className="source-drawer" onClick={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setActiveSource(null)} aria-label="Close passage"><X size={18} /></button><p className="eyebrow">Source passage · {pageLabel(activeSource)}</p><h2>{activeSource.sectionTitle}</h2><blockquote>{activeSource.text}</blockquote></article></div>}
+      {sampleLibraryOpen && <SampleLibrary savedIds={library.map(book => book.id)} disabled={bookTransitionBlocked} loadingId={openingBookId} selectionError={sampleError} onSelect={id => openStoredBook(id, true)} onClose={() => setSampleLibraryOpen(false)} />}
     </main>
   );
 }

@@ -76,6 +76,17 @@ The `local-library/` directory is ignored and is not included in the website's b
 
 ## Scope and next steps
 
+### Cloud sample library
+
+**Try a sample** on the start screen and **Browse sample books** in Local library offer two original, AI-authored English mini-books. They are examples, not excerpts of the owner's private books. Only these allowlisted texts and their prebuilt indexes ship in the server bundle; `local-library/`, uploaded PDFs, personal indexes and conversations do not.
+
+- `GET /api/samples` requires the existing username/password session and returns lightweight metadata. `GET /api/samples?id=...` returns one allowlisted, read-only sample bundle; unknown IDs return 404. There is no upload or mutation API for the shared catalog.
+- Selection copies the sample into this browser's account-scoped IndexedDB. Existing local copies are reopened without downloading, chunking or re-embedding. Atomic insert-only writes prevent repeated/concurrent selection from replacing the reader's copy.
+- Book metadata, content/index, history and summary caches stay scoped by account and book. Removing one account's copy does not remove the shared template or another account's copy. This is browser-local logical isolation, not encrypted storage or cross-device synchronization; someone controlling the browser's developer tools can access its local storage.
+- Opening a sample uses no AI API call and spends no question/indexing allowance. Asking questions still creates a query embedding and uses the ordinary answer/voice quotas. Model processing and explicitly submitted feedback follow the same rules as personal books.
+- The small catalog is bundled with the hosted app, so it remains available when the developer's computer is off. It does not require an R2 bucket. Future large catalogs should use dedicated object storage.
+- `node scripts/build-sample-index.mjs` is an explicit maintenance operation using the approved server-side credential. It generates `content/sample-index.json` once (12 passages / 2 books); an unchanged source hash skips API calls. It is never run by deployment or sample selection. Bump sample IDs when changing published content to preserve existing readers' copies.
+
 This version deliberately keeps each uploaded PDF and its vector index in that browser's IndexedDB, scoped in the UI to the signed-in local account. Pages with little or no embedded text are rendered locally and sent individually to the OCR endpoint; ordinary text pages stay entirely in the browser until extracted passages are embedded. Clearing site data, switching browsers or devices, or using a private browsing session creates a separate library. Available browser storage, OCR time, and the daily indexing allowance remain practical limits. A larger production system could move parsing to a background job and synchronize files and indexes across devices.
 
 ## Reference projects
