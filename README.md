@@ -81,8 +81,8 @@ The `local-library/` directory is ignored and is not included in the website's b
 The **Chat / Book management** tabs separate conversation from inspection. Book management supports searching/selecting local books, uploading PDFs, trying samples, removing an account's local copy (with confirmation), and opening its conversation without re-indexing.
 
 - **PDF & text:** lazily reads the selected account's PDF blob, renders one page at a time with the same-origin PDF.js worker, and offers page navigation and zoom. Canvas rendering is cancelled/destroyed on navigation. No PDF or preview data is uploaded, and no model request is made. Samples and legacy imports without PDFs show saved text instead, progressively revealed for large books.
-- **Chunks:** searchable by text, section or ID, with section filters, 12-item pagination, source page ranges when known, and links to the corresponding PDF page or stored vector. Unknown page provenance remains explicit.
-- **Index:** shows the actual embedding model/dimensions, vector validity, page provenance, saved timestamp, storage details, and the selected chunk's real vector (first 16 values, optionally all). This is read-only inspection, not an editor or a new indexing job.
+- **Chunks:** searchable by text, section or ID, with section filters, 12-item pagination, source page ranges when known, and links to the corresponding PDF page. Unknown page provenance remains explicit.
+- **Index:** shows the actual embedding model/dimensions, vector validity, page provenance, saved timestamp and storage details. Raw vector arrays and their debug controls are intentionally not displayed. The saved embeddings remain unchanged for retrieval. This is read-only inspection, not an editor or a new indexing job.
 - Account-scoped file reads are independent of lightweight metadata lists and conversation index reads. Selecting another book discards stale asynchronous preview results; inspecting a book does not change the active conversation. Deletion still removes only that account's local copy and associated history.
 
 ### Cloud sample library

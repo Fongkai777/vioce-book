@@ -21,14 +21,12 @@ export function BookInspector({ book, onChat, onRemove, disabled }: { book: Stor
   const [search, setSearch] = useState("");
   const [section, setSection] = useState("");
   const [chunkPage, setChunkPage] = useState(0);
-  const [vectorId, setVectorId] = useState(book.index[0]?.id || "");
   const [textLimit, setTextLimit] = useState(12000);
   const detailScroll = useRef<HTMLDivElement>(null);
   const stats = useMemo(() => indexStatistics(book.index, book.embeddingDimensions || 1536), [book]);
   const sections = useMemo(() => [...new Set(book.index.map(chunk => chunk.sectionTitle))], [book]);
   const filtered = useMemo(() => filterChunks(book.index, search, section), [book, search, section]);
   const pages = Math.max(1, Math.ceil(filtered.length / CHUNKS_PER_PAGE));
-  const selectedVector = book.index.find(chunk => chunk.id === vectorId);
   const savedText = useMemo(() => book.fullText || book.index.map(chunk => `${chunk.sectionTitle}\n\n${chunk.text}`).join("\n\n"), [book]);
   useEffect(() => {
     if (tab !== "pdf" || pdf !== undefined) return;
@@ -61,7 +59,7 @@ export function BookInspector({ book, onChat, onRemove, disabled }: { book: Stor
         <p className="inspector-note" role="status">{filtered.length} of {book.index.length} chunks · Stored text, not newly generated</p>
         <div className="chunk-cards">{filtered.slice(chunkPage * CHUNKS_PER_PAGE, (chunkPage + 1) * CHUNKS_PER_PAGE).map(chunk => <article key={chunk.id}>
           <div className="chunk-card-heading"><h3>{chunk.sectionTitle}</h3><small>{chunkPageLabel(chunk)}</small></div><code>{chunk.id}</code><p>{chunk.text}</p>
-          <footer><span>{chunk.text.length.toLocaleString()} characters · {chunk.embedding.length} dimensions</span><div>{pdf && chunk.pageStart > 0 && <button onClick={() => { setPdfPage(chunk.pageStart); setTab("pdf"); }}>View PDF page</button>}<button onClick={() => { setVectorId(chunk.id); setTab("index"); }}>Inspect vector</button></div></footer>
+          <footer><span>{chunk.text.length.toLocaleString()} characters</span>{pdf && chunk.pageStart > 0 && <button onClick={() => { setPdfPage(chunk.pageStart); setTab("pdf"); }}>View PDF page</button>}</footer>
         </article>)}</div>
         {!filtered.length && <p className="inspector-empty">No chunks match your search.</p>}
         {pages > 1 && <div className="chunk-pagination"><button disabled={chunkPage === 0} onClick={() => setChunkPage(value => value - 1)}>Previous chunks</button><span>{chunkPage + 1} / {pages}</span><button disabled={chunkPage >= pages - 1} onClick={() => setChunkPage(value => value + 1)}>Next chunks</button></div>}
@@ -69,9 +67,6 @@ export function BookInspector({ book, onChat, onRemove, disabled }: { book: Stor
       {tab === "index" && <>
         <div className="index-stats"><div><strong>{book.index.length}</strong><span>Saved vectors</span></div><div><strong>{book.embeddingDimensions || 1536}</strong><span>Expected dimensions</span></div><div><strong>{stats.characters.toLocaleString()}</strong><span>Chunk characters</span></div><div><strong>{stats.validVectors === book.index.length ? "Ready" : "Check needed"}</strong><span>{stats.validVectors} / {book.index.length} vectors valid</span></div></div>
         <dl className="index-metadata"><dt>Embedding model</dt><dd>{book.embeddingModel || "text-embedding-3-small"}</dd><dt>Observed dimensions</dt><dd>{stats.dimensions.join(", ") || "None"}</dd><dt>Retrieval</dt><dd>Semantic vectors + BM25 keywords, combined by reciprocal-rank fusion</dd><dt>Page provenance</dt><dd>{stats.withPages} / {book.index.length} chunks have source page numbers</dd><dt>Original file size</dt><dd>{book.fileSize ? formatBytes(book.fileSize) : "No original PDF recorded"}</dd><dt>Saved</dt><dd>{new Date(book.storedAt).toLocaleString("en-US")}</dd><dt>Storage</dt><dd>This browser · Current account only · No re-indexing on open</dd><dt>Book ID</dt><dd><code>{book.id}</code></dd></dl>
-        <h3>Inspect a vector</h3><p className="inspector-note">An embedding is a list of numbers used for similarity search, not readable prose. These are the actual saved values.</p>
-        <select className="vector-select" aria-label="Select chunk vector" value={vectorId} onChange={event => setVectorId(event.target.value)}>{book.index.map((chunk, i) => <option key={chunk.id} value={chunk.id}>{i + 1}. {chunk.sectionTitle} · {chunk.id}</option>)}</select>
-        {selectedVector && <div className="vector-inspection"><p>{selectedVector.embedding.length} values · L2 norm {Math.hypot(...selectedVector.embedding).toFixed(6)}</p><pre aria-label="First 16 embedding values">{JSON.stringify(selectedVector.embedding.slice(0, 16), null, 2)}</pre><details key={selectedVector.id}><summary>Show all {selectedVector.embedding.length} values</summary><pre>{JSON.stringify(selectedVector.embedding)}</pre></details></div>}
       </>}
     </div>
   </section>;
