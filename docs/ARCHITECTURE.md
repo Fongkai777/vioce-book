@@ -5,6 +5,7 @@
 ```text
 PDF file
   -> PDF.js page extraction in the browser
+  -> scanned/empty page -> local page rendering -> /api/ocr -> vision OCR
   -> heading-aware section builder
   -> overlapping child passages with page metadata
   -> /api/embed -> text-embedding-3-small
@@ -26,7 +27,7 @@ Every API route validates the site's HttpOnly login session before calling OpenA
 
 ## Why browser-side ingestion for the MVP
 
-The source book never needs to be stored on the server, which gives the prototype a clear privacy story and removes upload-storage lifecycle work. Only passage text is sent to the embedding endpoint. The tradeoff is that indexing must restart after a refresh and large books consume browser memory.
+The source book never needs to be stored on the server, which gives the prototype a clear privacy story and removes upload-storage lifecycle work. Only passage text is sent to the embedding endpoint for normal text PDFs. When a page has little or no embedded text, that page is rendered to a bounded JPEG in the browser and sent to the authenticated OCR endpoint. The tradeoff is that indexing must restart after a refresh and large books consume browser memory.
 
 For production, ingestion should become an asynchronous server job backed by object storage and a persistent vector database. Status events can stream to the client while parsing and embedding continue.
 
@@ -64,7 +65,7 @@ The answer prompt labels evidence `[S1]`, `[S2]`, and so on. The model must answ
 
 ## Failure behavior
 
-- Image-only PDFs receive an explicit OCR limitation message.
+- Image-only pages fall back to OCR; unreadable pages are skipped, and a clear error is shown if the document remains empty.
 - Microphone denial falls back to typed questions.
 - Empty speech and empty model answers are reported rather than silently accepted.
 - If TTS fails after an answer is generated, the textual answer remains visible.

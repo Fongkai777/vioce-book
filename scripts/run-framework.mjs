@@ -1,10 +1,21 @@
 import { spawnSync } from "node:child_process";
+import { cpSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { readExecutionProfile } from "./execution-profile.mjs";
+import { projectRoot } from "./sites-env.mjs";
 
 const [command, ...args] = process.argv.slice(2);
 if (!["dev", "build"].includes(command)) throw new Error("Expected dev or build.");
 const managedLinux = readExecutionProfile() === "managed-linux";
+
+// Keep PDF.js' worker at a stable same-origin URL. Bundling it through
+// import.meta.url can produce a file:/// URL in the hosted Vinext build.
+mkdirSync(path.join(projectRoot, "public"), { recursive: true });
+cpSync(
+  path.join(projectRoot, "node_modules/pdfjs-dist/build/pdf.worker.min.mjs"),
+  path.join(projectRoot, "public/pdf.worker.min.mjs"),
+);
 
 if (managedLinux && command === "build") {
   const result = spawnSync("bash", [

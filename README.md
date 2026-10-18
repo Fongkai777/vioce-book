@@ -4,7 +4,7 @@ Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder In
 
 ## Highlights
 
-- Browser-side PDF parsing with page provenance; the uploaded file is not persisted.
+- Browser-side PDF parsing with page provenance and OCR fallback for scanned pages; the uploaded file is not persisted.
 - Heading-aware section detection and overlapping structural chunks.
 - Hybrid retrieval: OpenAI embeddings + BM25 exact-match recall.
 - Reciprocal-rank fusion and diversity-aware final evidence selection.
@@ -35,6 +35,7 @@ Open the local URL printed by the development server. Microphone access works on
 | `OPENAI_API_KEY` | required | Server-side API credential |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API base URL |
 | `OPENAI_QA_MODEL` | `gpt-5-mini` | Grounded answer model |
+| `OPENAI_OCR_MODEL` | value of `OPENAI_QA_MODEL` | Scanned-page OCR model |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | Speech recognition |
 | `OPENAI_TTS_MODEL` | `gpt-4o-mini-tts` | Speech generation |
 | `OPENAI_TTS_VOICE` | `coral` | Synthesized voice |
@@ -62,7 +63,7 @@ After generating a schema migration with `pnpm db:generate`, apply it to local D
 
 ## Scope and next steps
 
-This first version deliberately keeps the uploaded PDF and its vector index in the browser session. It imposes no application-level file-size cap, but available browser memory remains a practical limit. A production version would move parsing to a background job, store files in object storage, persist indexes per user, and add OCR for scanned books.
+This version deliberately keeps the uploaded PDF and its vector index in the browser session. Pages with little or no embedded text are rendered locally and sent individually to the OCR endpoint; ordinary text pages stay entirely in the browser until extracted passages are embedded. It imposes no application-level file-size cap, but available browser memory, OCR time, and the daily indexing allowance remain practical limits. A production version would move parsing to a background job, store files in object storage, and persist indexes per user.
 
 ## Reference projects
 

@@ -7,6 +7,7 @@ export function getOpenAIConfig() {
     apiKey,
     baseUrl: (process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, ""),
     qaModel: process.env.OPENAI_QA_MODEL || "gpt-5-mini",
+    ocrModel: process.env.OPENAI_OCR_MODEL || process.env.OPENAI_QA_MODEL || "gpt-5-mini",
     transcribeModel: process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe",
     ttsModel: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
     ttsVoice: process.env.OPENAI_TTS_VOICE || "coral",

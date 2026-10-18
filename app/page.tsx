@@ -24,7 +24,7 @@ type QuotaSnapshot = {
 };
 
 const stageCopy: Record<Stage, string> = {
-  idle: "Upload a book to begin", reading: "Reading every page…",
+  idle: "Upload a book to begin", reading: "Reading pages and using OCR when needed…",
   indexing: "Building the book index…", ready: "Ready for your question",
   listening: "Listening… tap to finish", transcribing: "Turning speech into text…",
   retrieving: "Finding the best passages…", answering: "Composing a grounded answer…",
@@ -95,7 +95,7 @@ export default function Home() {
 
   async function extractPages(file: File) {
     const pdfjs = await import("pdfjs-dist");
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+    pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
     const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
     const pages: Array<{ pageNumber: number; text: string }> = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
@@ -107,9 +107,34 @@ export default function Home() {
         text += item.str;
         text += item.hasEOL ? "\n" : " ";
       }
-      pages.push({ pageNumber, text: text.replace(/[ \t]+/g, " ").trim() });
+      text = text.replace(/[ \t]+/g, " ").trim();
+      if (text.length < 20) {
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(2.2, 1800 / Math.max(baseViewport.width, baseViewport.height));
+        const viewport = page.getViewport({ scale });
+        const canvas = window.document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const canvasContext = canvas.getContext("2d", { alpha: false });
+        if (!canvasContext) throw new Error(`Could not render page ${pageNumber} for OCR.`);
+        await page.render({ canvas, canvasContext, viewport }).promise;
+        const image = canvas.toDataURL("image/jpeg", 0.86);
+        canvas.width = 1;
+        canvas.height = 1;
+        const response = await fetch("/api/ocr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image, pageNumber }),
+        });
+        const payload = (await response.json()) as { error?: string; text?: string };
+        if (!response.ok) throw new Error(payload.error || `OCR failed on page ${pageNumber}`);
+        text = String(payload.text || "").trim();
+      }
+      pages.push({ pageNumber, text });
+      page.cleanup();
       setProgress(Math.round((pageNumber / document.numPages) * 42));
     }
+    await document.destroy();
     return { pages, totalPages: document.numPages };
   }
 
@@ -138,7 +163,7 @@ export default function Home() {
       stopAudio(); setError(""); setBook(null); setChunks([]); setExchanges([]); setProgress(3); setStage("reading");
       const { pages, totalPages } = await extractPages(file);
       const nonEmptyPages = pages.filter((page) => page.text.length > 20);
-      if (!nonEmptyPages.length) throw new Error("No selectable text was found. This MVP does not OCR scanned PDFs yet.");
+      if (!nonEmptyPages.length) throw new Error("No readable text was found, including after OCR.");
       setStage("indexing");
       const structuralChunks = buildStructuralChunks(nonEmptyPages);
       if (!structuralChunks.length) throw new Error("The PDF could not be divided into readable passages.");

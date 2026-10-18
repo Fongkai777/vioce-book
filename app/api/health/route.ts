@@ -7,6 +7,7 @@ export async function GET() {
       ok: true,
       models: {
         answer: config.qaModel,
+        ocr: config.ocrModel,
         transcription: config.transcribeModel,
         speech: config.ttsModel,
         embedding: "text-embedding-3-small",
