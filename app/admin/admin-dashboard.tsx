@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import FeedbackList from "./feedback-list";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check, LoaderCircle, RefreshCw, ShieldCheck, UserPlus } from "lucide-react";
@@ -99,7 +98,8 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
 
   return <main className="admin-shell">
     <header className="admin-header">
-      <Link href="/" className="admin-back"><ArrowLeft size={16} /> Back to Voicebook</Link>
+      {/* Use a full-page navigation: the deployed router's client transition fails here. */}
+      <a href="/" className="admin-back"><ArrowLeft size={16} /> Back to Voicebook</a>
       <div className="admin-identity"><ShieldCheck size={17} /><span>Administrator</span><small>{adminUsername}</small></div>
     </header>
     <section className="admin-content">
