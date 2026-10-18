@@ -1,9 +1,11 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { readerDatabase } from "@/lib/reader-settings";
 import { apiErrorResponse, requireApiUser } from "@/lib/quota";
 import { feedbackTags } from "@/lib/personalization";
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
     const raw = await request.text();
     if (raw.length > 24000) return Response.json({ error: "Feedback is too long" }, { status: 400 });

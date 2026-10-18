@@ -98,6 +98,7 @@ export async function ensureBootstrapAdmin() {
       user_id, email, display_name, created_at, last_seen_at,
       username, password_hash, role, active
     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'admin', 1)
+    ON CONFLICT(username) DO NOTHING
   `).bind(userId, username, "Administrator", now, now, username, await hashPassword(password)).run();
 }
 

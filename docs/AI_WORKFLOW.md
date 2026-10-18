@@ -13,12 +13,12 @@
 - Rejected dense-only fixed-size chunking because the assignment explicitly calls out its recall limitations.
 - Kept citation metadata outside model control; page ranges come from parsing, not generation.
 - Chose reciprocal-rank fusion because dense and BM25 scores are not naturally comparable.
-- Preserved typed input alongside voice for accessibility and repeatable testing.
-- Kept uploaded files session-local for this prototype and documented the scalability tradeoff.
+- Replaced the ambiguous mixed composer with explicit voice controls, transcript review/editing and suggested questions. Fully keyboard-only free-form entry remains an accessibility release gate.
+- Persisted uploads and indexes in browser-local, account-scoped IndexedDB and documented the lack of cloud backup/synchronization.
 
 ## Prompt contract
 
-The answer model receives only retrieved passages, is instructed to use the reader's language, and must cite evidence labels. It must decline when excerpts are insufficient. Answers are kept short and free of tables so TTS output remains natural.
+The answer model receives retrieved passages, reader preferences and bounded full/compressed conversation context, is instructed to use the reader's language, and must cite evidence labels. It must decline when excerpts are insufficient. Answers are kept short and free of tables so TTS output remains natural.
 
 ## Review protocol
 

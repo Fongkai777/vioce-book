@@ -1,3 +1,4 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { env } from "cloudflare:workers";
 import { createUserAccount } from "@/lib/auth";
 import {
@@ -40,6 +41,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     await requireAdminUser();
     const body = (await request.json()) as { username?: unknown; password?: unknown; displayName?: unknown };
     const userId = await createUserAccount({
@@ -55,6 +57,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    assertSameOrigin(request);
     await requireAdminUser();
     const body = (await request.json()) as { userId?: unknown; questionLimit?: unknown; voiceMinutesLimit?: unknown };
     const userId = String(body.userId || "").trim();

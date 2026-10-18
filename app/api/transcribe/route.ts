@@ -1,8 +1,10 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const incoming = await request.formData();
     const audio = incoming.get("audio");
     const durationSeconds = Math.ceil(Number(incoming.get("durationSeconds")));

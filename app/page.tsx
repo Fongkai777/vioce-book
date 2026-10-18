@@ -184,51 +184,56 @@ export default function Home() {
   async function extractPages(file: File) {
     const pdfjs = await import("pdfjs-dist");
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-    const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
-    const pages: Array<{ pageNumber: number; text: string }> = [];
-    let ocrPages = 0;
-    const metadata = await document.getMetadata().catch(() => null);
-    const pdfAuthor = (metadata?.info as { Author?: unknown } | undefined)?.Author;
-    const author = typeof pdfAuthor === "string" ? pdfAuthor.trim().slice(0, 300) || undefined : undefined;
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const page = await document.getPage(pageNumber);
-      const content = await page.getTextContent();
-      let text = "";
-      for (const item of content.items) {
-        if (!("str" in item)) continue;
-        text += item.str;
-        text += item.hasEOL ? "\n" : " ";
+    const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+    try {
+      const document = await loadingTask.promise;
+      const pages: Array<{ pageNumber: number; text: string }> = [];
+      let ocrPages = 0;
+      const metadata = await document.getMetadata().catch(() => null);
+      const pdfAuthor = (metadata?.info as { Author?: unknown } | undefined)?.Author;
+      const author = typeof pdfAuthor === "string" ? pdfAuthor.trim().slice(0, 300) || undefined : undefined;
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const content = await page.getTextContent();
+        let text = "";
+        for (const item of content.items) {
+          if (!("str" in item)) continue;
+          text += item.str;
+          text += item.hasEOL ? "\n" : " ";
+        }
+        text = text.replace(/[ \t]+/g, " ").trim();
+        if (text.length < 20) {
+          ocrPages++;
+          const baseViewport = page.getViewport({ scale: 1 });
+          const scale = Math.min(2.2, 1800 / Math.max(baseViewport.width, baseViewport.height));
+          const viewport = page.getViewport({ scale });
+          const canvas = window.document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const canvasContext = canvas.getContext("2d", { alpha: false });
+          if (!canvasContext) throw new Error(`Could not render page ${pageNumber} for OCR.`);
+          await page.render({ canvas, canvasContext, viewport }).promise;
+          const image = canvas.toDataURL("image/jpeg", 0.86);
+          canvas.width = 1;
+          canvas.height = 1;
+          const response = await fetch("/api/ocr", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image, pageNumber }),
+          });
+          const payload = (await response.json()) as { error?: string; text?: string };
+          if (!response.ok) throw new Error(payload.error || `OCR failed on page ${pageNumber}`);
+          text = String(payload.text || "").trim();
+        }
+        pages.push({ pageNumber, text });
+        page.cleanup();
+        setProgress(Math.round((pageNumber / document.numPages) * 42));
       }
-      text = text.replace(/[ \t]+/g, " ").trim();
-      if (text.length < 20) {
-        ocrPages++;
-        const baseViewport = page.getViewport({ scale: 1 });
-        const scale = Math.min(2.2, 1800 / Math.max(baseViewport.width, baseViewport.height));
-        const viewport = page.getViewport({ scale });
-        const canvas = window.document.createElement("canvas");
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        const canvasContext = canvas.getContext("2d", { alpha: false });
-        if (!canvasContext) throw new Error(`Could not render page ${pageNumber} for OCR.`);
-        await page.render({ canvas, canvasContext, viewport }).promise;
-        const image = canvas.toDataURL("image/jpeg", 0.86);
-        canvas.width = 1;
-        canvas.height = 1;
-        const response = await fetch("/api/ocr", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image, pageNumber }),
-        });
-        const payload = (await response.json()) as { error?: string; text?: string };
-        if (!response.ok) throw new Error(payload.error || `OCR failed on page ${pageNumber}`);
-        text = String(payload.text || "").trim();
-      }
-      pages.push({ pageNumber, text });
-      page.cleanup();
-      setProgress(Math.round((pageNumber / document.numPages) * 42));
+      return { pages, totalPages: document.numPages, author, ocrPages };
+    } finally {
+      // PDF.js 6 owns document/worker cleanup on the loading task, including errors.
+      await loadingTask.destroy();
     }
-    await document.destroy();
-    return { pages, totalPages: document.numPages, author, ocrPages };
   }
 
   async function embedTexts(texts: string[], model = "text-embedding-3-small", purpose = "index", signal?: AbortSignal) {

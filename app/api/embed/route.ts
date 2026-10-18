@@ -1,8 +1,10 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const body = (await request.json()) as { texts?: unknown; model?: unknown; purpose?: unknown };
     const purpose = body.purpose ?? "index";
     if (purpose !== "query" && purpose !== "index") return jsonError(new Error("Invalid embedding purpose"), 400);

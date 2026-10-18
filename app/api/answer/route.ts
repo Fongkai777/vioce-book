@@ -1,3 +1,4 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError, responseText } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
 import { readPreferences } from "@/lib/reader-settings";
@@ -9,6 +10,7 @@ type Context = { id: string; sectionTitle: string; pageStart: number; pageEnd: n
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
     const raw = await request.text();
     if (bytes(raw) > 450_000) throw new ApiError("请求过大，请刷新页面后重试。", 413);
@@ -16,6 +18,12 @@ export async function POST(request: Request) {
     const question = String(body.question || "").trim();
     const contexts = Array.isArray(body.contexts) ? body.contexts.slice(0, 8) : [];
     if (!question || !contexts.length) return jsonError(new Error("A question and retrieved context are required"), 400);
+    if (contexts.some(context => !context || typeof context.id !== "string" ||
+      typeof context.sectionTitle !== "string" || typeof context.text !== "string" || !context.text.trim() ||
+      !Number.isInteger(context.pageStart) || context.pageStart < 0 ||
+      !Number.isInteger(context.pageEnd) || context.pageEnd < context.pageStart)) {
+      throw new ApiError("Retrieved context is invalid", 400);
+    }
 
     const preferences = await readPreferences(user.userId);
     const legacy = normalizeHistory(body.history);

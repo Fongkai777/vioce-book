@@ -1,6 +1,10 @@
 # Voicebook
 
+[![CI](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml/badge.svg)](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml)
+
 Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder Intern take-home assignment. Upload a long PDF, ask a question through the microphone, and hear a concise answer grounded in cited passages from the book.
+
+**Deployment scope:** an account-controlled demo with release checks, not a certification of unrestricted multi-tenant production readiness. Review the [operating runbook and release gates](docs/OPERATIONS.md) before expanding access. The runtime is Next-style routes on Vinext/Vite and Cloudflare Workers + D1, not a static site or standalone Node server.
 
 ## Highlights
 
@@ -14,23 +18,29 @@ Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder In
 - Reciprocal-rank fusion and diversity-aware final evidence selection.
 - Page-level source cards and a full passage drawer.
 - Microphone capture, OpenAI transcription, grounded answer generation, and AI voice playback.
-- Typed questions remain available for accessibility and testing.
+- Editable transcripts, suggested questions, automatic spoken replies and interruption controls.
 - Per-user daily question and voice allowances backed by D1.
 - An administrator dashboard for reviewing usage and adjusting individual limits.
-- Unit tests for heading detection, provenance, BM25, and hybrid retrieval.
+- Offline unit/UI and SQLite-backed route tests for retrieval, storage, history, voice, authentication, quotas and account isolation.
 
 ## Run locally
 
-Requirements: Node.js 22.13+ and an OpenAI API key.
+Recommended: Node.js 24 LTS and pnpm 11.25.0. Tests/builds need no API keys. Real model calls require separately configured credentials.
 
 ```bash
+git clone https://github.com/Fongkai777/vioce-book.git
+cd vioce-book
+npm install --global pnpm@11.25.0
+pnpm install --frozen-lockfile
 cp .env.example .env.local
-# Add OPENAI_API_KEY to .env.local
-pnpm install
+# Set OPENAI_API_KEY and a unique ADMIN_PASSWORD in .env.local
+pnpm db:migrate:local
 pnpm dev
 ```
 
-Open the local URL printed by the development server. Microphone access works on localhost or HTTPS.
+Open the printed URL (normally port 5173). Microphone access requires localhost or HTTPS. Log in with ADMIN_USERNAME / ADMIN_PASSWORD, then create a regular reviewer account at `/admin`. The bootstrap password creates an account only once; editing the environment later does not reset an existing password.
+
+`db:migrate:local` targets the emulator only. Older databases created by manually executing SQL need their migration history reconciled first. Do not delete an existing database to resolve a migration mismatch.
 
 ## Environment
 
@@ -53,10 +63,13 @@ Secrets stay in `.env.local`, which is ignored by Git. The browser only calls th
 ## Commands
 
 ```bash
-pnpm test      # retrieval unit tests
-pnpm lint      # code quality
-pnpm build     # production build
-pnpm dev       # local development
+pnpm check          # release scan + types + offline tests + production build
+pnpm test           # unit/UI and SQLite-backed server tests; no paid calls
+pnpm typecheck      # TypeScript
+pnpm check:release  # private-file boundaries and historical secret-pattern scan
+pnpm build          # Worker and client build
+pnpm dev            # local development
+pnpm db:migrate:local # local D1 migrations only
 ```
 
 After generating a schema migration with `pnpm db:generate`, apply it to local D1 before running the built Worker preview. Hosted Sites deployments apply committed migrations automatically.
@@ -66,6 +79,10 @@ After generating a schema migration with `pnpm db:generate`, apply it to local D
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing and answer-quality evaluation](docs/EVALUATION.md)
 - [AI-assisted workflow](docs/AI_WORKFLOW.md)
+- [Deployment, rollback and release gates](docs/OPERATIONS.md)
+- [API and data boundaries](docs/API.md)
+- [Security policy](SECURITY.md)
+- [Contributing and validation](CONTRIBUTING.md)
 
 ## Import an existing local library
 
@@ -116,7 +133,7 @@ This adapts the turn-taking and interruption principles from [OpenAI's Realtime 
 
 The microphone starts only after the user requests voice mode. Mute disables its track; ending voice, leaving the tab, logging out, unmounting or 90 seconds without a new utterance stops capture. Audio before detected turns stays in memory locally; detected turns are sent to the configured provider through the server. No new provider/key or browser-exposed secret is introduced. Accepted requests still consume their normal quotas even when later interrupted; cancellation is not a billing refund. Single-turn transcription is limited to 2,000 displayed characters and TTS to 5,000 characters, matching the existing answer/speech input limits.
 
-Validation: 41 unit/UI tests plus a browser-only synthetic-audio harness exercised the actual AudioWorklet, level meter, transcript editing, autoplay, speech interruption, cancelled late replies and consecutive utterance merging. A valid-then-empty sequence reproduced the v17 draft-loss bug; regression checks cover empty-only recovery, preservation after a failed continuation and ending voice with unsent words. No real microphone or paid API was used in the harness. Hardware microphone quality and real-provider latency require a live user trial.
+Validation includes offline tests and a browser-only synthetic-audio harness exercising the actual AudioWorklet, level meter, transcript editing, autoplay, speech interruption, cancelled late replies and consecutive utterance merging. A valid-then-empty sequence reproduced the v17 draft-loss bug; regression checks cover empty-only recovery, preservation after a failed continuation and ending voice with unsent words. No real microphone or paid API was used in the harness. Hardware microphone quality and real-provider latency require a live user trial.
 
 The implementation is original, with design ideas informed by:
 

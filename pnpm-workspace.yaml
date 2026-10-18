@@ -3,3 +3,11 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   workerd: true
+
+# Keep transitive runtime/build dependencies on reviewed patched releases.
+overrides:
+  'react-server-dom-webpack@19.2.6': 19.2.8
+  'undici@>=7.0.0 <7.29.1': 7.29.1
+  'ws@>=8.0.0 <8.21.0': 8.21.0
+  'image-size@>=2.0.0 <2.0.3': 2.0.3
+  'sharp@>=0.34.0 <0.35.5': 0.35.5

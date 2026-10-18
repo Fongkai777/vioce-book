@@ -1,3 +1,4 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { apiErrorResponse, requireApiUser } from "@/lib/quota";
 import { normalizePreferences } from "@/lib/personalization";
 import { readPreferences, readerDatabase } from "@/lib/reader-settings";
@@ -8,6 +9,7 @@ export async function GET() {
 }
 export async function PUT(request: Request) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
     const raw = await request.text();
     if (raw.length > 4000) return Response.json({ error: "Preferences are too long" }, { status: 400 });

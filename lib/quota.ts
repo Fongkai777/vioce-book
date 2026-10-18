@@ -90,6 +90,9 @@ export async function getQuotaSnapshot(user: AppUser): Promise<QuotaSnapshot> {
 }
 
 export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: number) {
+  if (!Number.isFinite(rawAmount) || rawAmount <= 0 || !Number.isSafeInteger(Math.ceil(rawAmount))) {
+    throw new ApiError("Invalid usage amount", 400);
+  }
   const amount = Math.max(1, Math.ceil(rawAmount));
   const date = singaporeDate();
   await ensureDailyRow(user.userId, date);

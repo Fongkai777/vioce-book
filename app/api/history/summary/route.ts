@@ -1,3 +1,4 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, openAIError, responseText } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
 import { ApiError } from "@/lib/errors";
@@ -5,6 +6,7 @@ import { bytes, SUMMARY_BATCH, SUMMARY_OUTPUT } from "@/lib/conversation-context
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
     const raw = await request.text();
     if (bytes(raw) > SUMMARY_BATCH * 2) throw new ApiError("摘要请求过大", 413);

@@ -6,6 +6,7 @@ import Home from "../../app/page";
 import {saveBook} from "../../lib/book-library";
 import {saveHistory} from "../../lib/reading-history";
 import {defaultPreferences} from "../../lib/personalization";
+import {syntheticPdf} from "./pdf-data";
 export default function BookQA() {
   const [ready,setReady]=useState(false);
   useEffect(()=>{
@@ -22,6 +23,7 @@ export default function BookQA() {
       const index=Array.from({length:25},(_,i)=>({id:`qa-passage-${i}`,sectionTitle:`Section ${i+1}`,pageStart:0,pageEnd:0,text:`Passage ${i+1}. Read slowly, ask a question, and check the author's evidence. 阅读与思考。`,embedding:[1,0]}));
       const base={id:"qa-library-book",name:"The deliberate reader — QA",pages:0,chapters:25,chunks:25,fileSize:0,storedAt:"2026-10-19T00:00:00Z",lastOpenedAt:"2026-10-19T00:00:00Z",embeddingDimensions:2,importedFrom:"Voicebook sample",index};
       await saveBook(owner,base);
+      await saveBook(owner,{...base,id:"qa-pdf-preview",name:"PDF preview test",pages:2,importedFrom:undefined,pdf:new Blob([syntheticPdf()],{type:"application/pdf"}),index:index.slice(0,2).map((chunk,i)=>({...chunk,pageStart:i+1,pageEnd:i+1})),chunks:2});
       await saveBook(owner,{...base,id:"qa-private",name:"Private legacy book",importedFrom:"Counseling Copilot",lastOpenedAt:"2026-10-18T00:00:00Z",index:index.slice(0,1),chunks:1});
       await saveBook(owner,{...base,id:"qa-invalid",name:"Incomplete index",index:[],chunks:0,lastOpenedAt:"2026-10-17T00:00:00Z"});
       const turns=[{id:"qa-citation-turn",question:"Where should I look?",answer:"Look at the final saved passage. [S1]",sources:[index[24]]}];

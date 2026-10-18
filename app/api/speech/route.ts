@@ -1,8 +1,10 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const body = (await request.json()) as { text?: unknown };
     const text = String(body.text || "").trim().slice(0, 5000);
     if (!text) return jsonError(new Error("Text is required"), 400);

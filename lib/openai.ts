@@ -1,3 +1,5 @@
+import { ApiError, apiErrorResponse } from "./errors";
+
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 export function getOpenAIConfig() {
@@ -19,14 +21,12 @@ export function authHeaders(apiKey: string) {
 }
 
 export async function openAIError(response: Response) {
-  let detail = `OpenAI request failed (${response.status})`;
-  try {
-    const body = (await response.json()) as { error?: { message?: string } };
-    if (body.error?.message) detail = body.error.message;
-  } catch {
-    // Keep the status-only message when the upstream body is not JSON.
-  }
-  return new Error(detail);
+  // Providers can echo keys or submitted excerpts in errors; expose neither.
+  await response.body?.cancel().catch(() => {});
+  return new ApiError(response.status === 429
+    ? "The AI service is busy or unavailable. Please try again later."
+    : "The AI service could not complete this request. Please try again later.",
+  response.status === 429 ? 503 : 502);
 }
 
 export function responseText(payload: {
@@ -43,6 +43,6 @@ export function responseText(payload: {
 }
 
 export function jsonError(error: unknown, status = 500) {
-  const message = error instanceof Error ? error.message : "Unexpected server error";
-  return Response.json({ error: message }, { status });
+  return apiErrorResponse(new ApiError(status < 500 && error instanceof Error
+    ? error.message : "The service could not complete this request. Please try again later.", status));
 }

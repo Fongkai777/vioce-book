@@ -1,3 +1,4 @@
+import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError, responseText } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
 
@@ -6,6 +7,7 @@ const OCR_INDEXING_UNITS_PER_PAGE = 10_000;
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const body = (await request.json()) as { image?: unknown; pageNumber?: unknown };
     const image = typeof body.image === "string" ? body.image : "";
     const pageNumber = Math.max(1, Math.floor(Number(body.pageNumber) || 1));
