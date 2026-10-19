@@ -1,5 +1,7 @@
 # AI-assisted workflow
 
+[中文](AI_WORKFLOW.zh-CN.md) · [English project overview](../README.md)
+
 ## Process
 
 1. Extracted the assignment into explicit acceptance criteria: voice input, RAG grounding, spoken output, retrieval quality, polished UI, documentation, and testing.

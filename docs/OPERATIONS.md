@@ -1,5 +1,7 @@
 # Operations and release checklist
 
+[中文](OPERATIONS.zh-CN.md) · [English project overview](../README.md)
+
 ## Supported deployment
 
 The current target is Sites hosting on Cloudflare Workers with a `DB` D1 binding. The checked-in `.openai/hosting.json` identifies the existing site; do not reuse its identity for an unrelated fork. GitHub stores source and runs checks, **not** the website, secrets or personal library. Pushing to GitHub does not deploy the website.

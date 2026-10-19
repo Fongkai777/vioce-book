@@ -1,6 +1,12 @@
 # Voicebook
 
+[中文项目介绍](README.zh-CN.md) · [English](README.md) · [在线体验 / Live demo](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site) · [中文用户手册](docs/USER-MANUAL.zh-CN.md)
+
 [![CI](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml/badge.svg)](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml)
+
+Voicebook 是一个以语音为主要入口的 PDF 阅读问答网站：选书或上传 PDF，直接说出问题，获得带原文引用的回答和自动语音播放。支持扫描页 OCR、多本书与索引复用、连续追问和打断、阅读偏好、反馈重答、账号隔离及用量管理。
+
+中文读者可从[五分钟体验流程](docs/USER-MANUAL.zh-CN.md#1-五分钟开始体验)开始；开发者和考官可阅读[中文项目说明与文档导航](README.zh-CN.md)。当前定位是具备发布检查的受控演示，不代表已通过全面生产或独立安全认证。
 
 Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder Intern take-home assignment. Upload a long PDF, ask a question through the microphone, and hear a concise answer grounded in cited passages from the book.
 
@@ -85,13 +91,15 @@ After generating a schema migration with `pnpm db:generate`, apply it to local D
 ## Documentation
 
 - [用户手册与五分钟体验流程](docs/USER-MANUAL.zh-CN.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Testing and answer-quality evaluation](docs/EVALUATION.md)
-- [AI-assisted workflow](docs/AI_WORKFLOW.md)
-- [Deployment, rollback and release gates](docs/OPERATIONS.md)
-- [API and data boundaries](docs/API.md)
-- [Security policy](SECURITY.md)
-- [Contributing and validation](CONTRIBUTING.md)
+- Architecture: [English](docs/ARCHITECTURE.md) · [中文](docs/ARCHITECTURE.zh-CN.md)
+- Testing and answer-quality evaluation: [English](docs/EVALUATION.md) · [中文](docs/EVALUATION.zh-CN.md)
+- AI-assisted workflow: [English](docs/AI_WORKFLOW.md) · [中文](docs/AI_WORKFLOW.zh-CN.md)
+- Deployment, rollback and release gates: [English](docs/OPERATIONS.md) · [中文](docs/OPERATIONS.zh-CN.md)
+- API and data boundaries: [English](docs/API.md) · [中文](docs/API.zh-CN.md)
+- Backup and recovery: [English](docs/BACKUP-RESTORE.md) · [中文](docs/BACKUP-RESTORE.zh-CN.md)
+- AI cost accounting: [English](docs/PRICING.md) · [中文](docs/PRICING.zh-CN.md)
+- Security policy: [English](SECURITY.md) · [中文](SECURITY.zh-CN.md)
+- Contributing and validation: [English](CONTRIBUTING.md) · [中文](CONTRIBUTING.zh-CN.md)
 
 ## Import an existing local library
 

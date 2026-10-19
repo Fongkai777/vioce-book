@@ -1,5 +1,7 @@
 # API and data boundaries
 
+[中文](API.zh-CN.md) · [English project overview](../README.md)
+
 All paths are same-origin. Private endpoints derive identity from the HttpOnly `voicebook_session` cookie, never a submitted `userId`. No general CORS API is offered. Mutations reject foreign `Origin` and `Sec-Fetch-Site: cross-site` before parsing. Clients without Origin are permitted but still require a valid session. Prefer TLS outside localhost.
 
 | Route | Method / access | Input / behavior |
@@ -19,7 +21,7 @@ All paths are same-origin. Private endpoints derive identity from the HttpOnly `
 | `/api/samples` | GET, signed in | Lightweight allowlisted catalog; `?id=...` returns one prebuilt sample. No mutation API |
 | `/api/embed` | POST, signed in | `texts` (1–64), `purpose` (`index` / `query`), supported `model`; legacy model allows queries only |
 | `/api/ocr` | POST, signed in | JPEG/PNG base64 data URL `image` (up to 8,000,000 characters), `pageNumber`; returns extracted `text` |
-| `/api/transcribe` | POST, signed in | Multipart `audio` (up to 6 MiB; entire body <=6.5 MB), declared `durationSeconds` (1–60); returns `text` and quota |
+| `/api/transcribe` | POST, signed in | Multipart `audio` (up to 6 MiB; entire body <=6.5 MB); server validates canonical PCM WAV and actual duration (>0, <=60 seconds), not client-declared `durationSeconds`; returns `text` and quota |
 | `/api/answer` | POST, signed in | `question` (up to 2,000 characters), retrieved `contexts`, optional conversation/revision; returns answer/citations and quota |
 | `/api/history/summary` | POST, signed in | Bounded historical `text`; separate maintenance allowance, no question consumed |
 | `/api/speech` | POST, signed in | `text` (at most first 5,000 characters processed); returns `audio/mpeg` |

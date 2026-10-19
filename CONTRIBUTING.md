@@ -1,5 +1,7 @@
 # Contributing
 
+[中文](CONTRIBUTING.zh-CN.md) · [English project overview](README.md)
+
 1. Use Node.js 24 and pnpm 11.25.0. Install with `pnpm install --frozen-lockfile`.
 2. Copy `.env.example` only for runtime work. Offline checks must not require credentials, real audio or paid provider calls.
 3. Make a focused branch/change. Keep existing user files, account boundaries, citation provenance and saved index formats intact.
@@ -11,3 +13,5 @@ The GitHub CI workflow checks full Git history, TypeScript, offline tests and a 
 Do not update dependency ranges without updating/reviewing `pnpm-lock.yaml`. Do not use a model call to generate test fixtures during CI. Synthetic harness routes under `app/book-qa` or `app/voice-qa` are temporary local tools and must be removed before commit; `check:release` rejects them.
 
 Run paid integration checks only with explicit approval, a disposable local database, synthetic inputs and a known spending limit. The existing `scripts/check-reader-feedback.mjs` supports optional live-model flags and is not part of CI.
+
+Keep English documentation and corresponding `.zh-CN.md` files aligned when changing user-visible behavior, quotas, privacy, pricing or operational steps. Preserve the distinction between measured results and future targets.

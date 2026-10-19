@@ -1,5 +1,7 @@
 # Security policy
 
+[中文](SECURITY.zh-CN.md) · [English project overview](README.md)
+
 This is an account-controlled demo. See [production release gates](docs/OPERATIONS.md#gates-before-unrestricted-production-access) before widening access. CI passing is not a security certification.
 
 ## Reporting
@@ -31,7 +33,7 @@ The old braces mitigation and expiring advisory acceptance have been deleted. `p
 
 Local key scoping is not encryption or isolation from someone controlling the browser/devtools. Uploaded files, excerpts and conversation data remain untrusted even when user-supplied; model instructions must not be inferred from document text. Citation correctness is not guaranteed and needs human review.
 
-All six paid AI paths now use an atomic global daily reservation budget (default US$5), a persistent kill switch, global/per-user concurrency leases and bounded request reads. This is an estimated spend circuit breaker, **not a guaranteed provider-invoice cap**: rates are conservative policy assumptions, custom providers may charge differently, audio duration remains client-declared, and other applications sharing a key are outside its scope. Set a separate provider-side billing limit.
+All six paid AI paths now use an atomic global daily reservation budget (default US$5), a persistent kill switch, global/per-user concurrency leases and bounded request reads. This is an estimated spend circuit breaker, **not a guaranteed provider-invoice cap**: known models use versioned token rates, custom providers and TTS still have estimates, and other applications sharing a key are outside its scope. Transcription duration is verified server-side from canonical PCM WAV data. Set a separate provider-side billing limit.
 
 Manual backups use AES-256-GCM with a random salt/nonce and PBKDF2-SHA256 (100,000 iterations; Worker-compatible). Use a long, randomly generated passphrase, stored separately. Administrator backup contains password hashes and feedback; never publish it. Restore requires admin authorization, same-origin, password reauthentication, explicit confirmation, paused/drained AI and a valid encrypted snapshot. Restore is transactional, revokes sessions and cannot reduce global reserved spend. Book restore checks account ownership and preserves existing indexes/newer conversation turns. No automatic/cloud backup, scheduled monitoring, MFA, password recovery UI, comprehensive retention policy, backup/restore SLA or independent audit is provided.
 

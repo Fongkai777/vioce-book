@@ -1,5 +1,7 @@
 # Testing and answer-quality evaluation
 
+[中文](EVALUATION.zh-CN.md) · [English project overview](../README.md)
+
 ## Automated release checks
 
 Self-registration adds seven regression tests (109 total): concurrent admission across distinct IPs, regular-only roles/default quotas/login, invalid/reserved/duplicate usernames, failed-write rollback, per-IP throttling/body bounds, Singapore-midnight rollover, deletion and backup-restore preservation of registration counters. These run against isolated SQLite, not production accounts; no real daily registration places are consumed. On 2026-10-19 the built Worker also passed all ten migrations in a fresh disposable Wrangler database. Chrome verified registration success and subsequent login as a regular reader with 20 questions / 10 voice minutes; five simultaneous HTTP registrations competing for the final place produced one 201 and four 429 responses, with zero places remaining. No live account was created.
@@ -18,7 +20,7 @@ Self-registration adds seven regression tests (109 total): concurrent admission 
 | Account data | Preferences/feedback cannot target a submitted foreign user ID; samples are authenticated/allowlisted and cost no quota to open |
 | Operations | Concurrent cross-account global budget, per-user/global leases, pause, expiry/day rollover, no refunds, admin-only settings, bounded request bodies and readiness failure |
 | Recovery | Authenticated encryption, wrong passphrase/tampering rejection, server snapshot/restore, role/origin/reauthentication guards, transaction rollback, session revocation and spend preservation; browser PDF/vector/history roundtrip and cross-account rejection |
-| Dependency mitigation | Real ESLint/Vinext dependency copies reject deeply nested/unbalanced strings, deep direct ASTs and cycles while ordinary expansion still works |
+| Dependency replacement | Actual installed ESLint/Vinext consumers preserve directory/file matching and generated variable imports; regression checks prevent the removed braces/micromatch/fast-glob chain from returning |
 
 The server harness throws on external `fetch` by default; the provider-wrapper regression replaces it with synthetic responses/errors without networking. Its database is `:memory:` and does not access `.wrangler` or production. SQLite validates SQL and constraint behavior, but it does not reproduce Cloudflare network scheduling, Worker resource limits or D1 availability. Quota/budget tests issue overlapping calls and verify atomic updates never exceed limits; they are not distributed load tests. Recovery tests never replace real production data.
 

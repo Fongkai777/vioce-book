@@ -1,5 +1,7 @@
 # Architecture and design decisions
 
+[中文](ARCHITECTURE.zh-CN.md) · [English project overview](../README.md)
+
 ## End-to-end flow
 
 ```text

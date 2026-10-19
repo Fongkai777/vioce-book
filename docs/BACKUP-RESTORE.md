@@ -1,5 +1,7 @@
 # Manual backup and recovery runbook
 
+[中文](BACKUP-RESTORE.zh-CN.md) · [English project overview](../README.md)
+
 No scheduled jobs or cloud backup storage are configured. Make and verify downloads before important changes. Save backup files outside the repository, ideally on a separate encrypted device, and store a long random passphrase in a password manager. Losing both the live data and the passphrase is unrecoverable. The app does not retain that passphrase.
 
 ## Server snapshot

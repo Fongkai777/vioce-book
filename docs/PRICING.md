@@ -1,5 +1,7 @@
 # AI cost accounting
 
+[中文](PRICING.zh-CN.md) · [English project overview](../README.md)
+
 Policy v2, verified October 19, 2026. Daily default remains **US$5**, resetting at midnight Singapore time. This is an application spending estimate, not an invoice, and it covers only this application. Keep a provider-side limit for keys shared with other applications.
 
 ## Verified standard rates
