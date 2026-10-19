@@ -6,7 +6,7 @@
 
 面向 Wiz AI Builder Intern 作业的语音读书助手：上传 PDF，用麦克风提问，获得带原文引用的回答并自动播放。重点是长文档检索、可核对的依据和连续对话，而不是简单给聊天模型附上 PDF。
 
-**线上版本：** Sites **v33**（2026-10-20 发布），对应源码 [`f2df8dd`](https://github.com/Fongkai777/voice-book/commit/f2df8dd1b07fdebbc35c75b02330ef1f7a505ed9)，已包含 [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) 的检索与回答语言修复，并经线上真实麦克风重测确认（[结果](docs/EVALUATION-LOG.zh-CN.md)）。下一个提交中的语音分段修复已在 `main` 分支但**尚未部署**；部署前，较长回答的部分语音可能提示 "Too many AI requests are running"（文字回答完整，可用 **Play saved audio** 重播已收到的部分）。详见[部署记录](docs/DEPLOYMENT.zh-CN.md)。
+**线上版本：** Sites **v34**，新加坡时间 2026-10-20 发布，对应源码 [`b13356c`](https://github.com/Fongkai777/voice-book/commit/b13356cf4ab4490b75fb092d868c91b2162e6782)，已包含 [`5ee91b6`](https://github.com/Fongkai777/voice-book/commit/5ee91b676f28e54495bb07e2e4e2bbd26176aacf) 的语音逐段请求修复。健康检查及 [GitHub CI](https://github.com/Fongkai777/voice-book/actions/runs/39290175803) 通过。v33 线上重测已有记录；新的语音修复已通过离线回归，尚未重新做线上声学测试。详见[部署记录](docs/DEPLOYMENT.zh-CN.md)。
 
 ## 快速体验（约 10 分钟）
 

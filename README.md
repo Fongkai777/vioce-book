@@ -6,7 +6,7 @@
 
 A voice-first PDF reading companion for the Wiz AI Builder Intern take-home assignment. Upload a book, ask through your microphone, and hear an answer with clickable source passages.
 
-**Live site:** Sites **v33**, published 20 October 2026 (Singapore time), matches source [`f2df8dd`](https://github.com/Fongkai777/voice-book/commit/f2df8dd1b07fdebbc35c75b02330ef1f7a505ed9) and includes the retrieval and answer-language changes in [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45). A live microphone re-run on v33 confirmed those fixes ([results](docs/EVALUATION-LOG.md)). The speech-segment fix in the next commit is on `main` but **not yet deployed**; until it is, part of a long spoken answer can fail with "Too many AI requests are running" (the full text still appears, and **Play saved audio** replays what was received). See the [deployment record](docs/DEPLOYMENT.md).
+**Live site:** Sites **v34**, published 20 October 2026 (Singapore time), matches source [`b13356c`](https://github.com/Fongkai777/voice-book/commit/b13356cf4ab4490b75fb092d868c91b2162e6782) and includes the sequential speech-request fix in [`5ee91b6`](https://github.com/Fongkai777/voice-book/commit/5ee91b676f28e54495bb07e2e4e2bbd26176aacf). Health checks and [GitHub CI](https://github.com/Fongkai777/voice-book/actions/runs/39290175803) passed. The v33 live re-run is recorded; the new speech fix has offline regression coverage but has not yet had a live acoustic re-run. See the [deployment record](docs/DEPLOYMENT.md).
 
 ## Try it (about 10 minutes)
 
