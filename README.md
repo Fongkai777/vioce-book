@@ -6,16 +6,31 @@
 
 A voice-first PDF reading companion for the Wiz AI Builder Intern take-home assignment. Upload a book, ask through your microphone, and hear an answer with clickable source passages.
 
-Verified hosted release: **Sites v32**, matching GitHub source [`cc28e27`](https://github.com/Fongkai777/voice-book/commit/cc28e2791303225393fb56fa7c845315e34fe5aa), published 19 October 2026. Application behavior remains at [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1); subsequent changes are documentation only. See the [deployment/source mapping](docs/DEPLOYMENT.md). The v28 acceptance screenshots are historical evidence, not the current release identifier.
+**Live site:** Sites v32, built from [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1). The retrieval and answer-language fix in [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) is on `main` but **not yet deployed**; until it is, a topic change can still retrieve passages from earlier questions. See the [deployment record](docs/DEPLOYMENT.md).
 
-## Try it
+## Try it (about 10 minutes)
 
-1. Open the demo and create a regular account. Self-registration allows **two accounts per Singapore calendar day**; if full, ask the administrator for a reviewer account.
-2. Upload the [12-chapter test PDF](output/pdf/alice-in-wonderland.pdf), or choose **Try a sample** for a quick start. Short samples do not replace the assignment's long-book test.
-3. Start a voice conversation. Transcripts appear in chat and send automatically; answers play aloud. Interrupt, retry, and follow citations back to the book.
-4. Explore **Reading preferences**, answer feedback, and **Book management**.
+**Before you start**
 
-See the [acceptance report](docs/acceptance/README.md) and [70-second screenshot demo](docs/acceptance/demo.mp4). Reviewer passwords are shared privately, never committed.
+- **Account:** use the reviewer account in the submission email. Self-registration is capped at two accounts per day for the whole site, so it may already be full.
+- **Browser:** desktop Chrome is recommended. Some in-app or embedded browsers block microphone access; the app then shows "Microphone access was denied".
+- **Headphones** are recommended. With speakers, the answer audio can mask your voice, so speaking over a playing answer may not interrupt it.
+- **Timing:** each spoken turn takes about 15–20 seconds. The status line shows each stage: *Turning speech into text → Finding the best passages → Composing a grounded answer → Preparing the spoken reply → Playing the answer*.
+- **Microphone required for free-form questions.** There is no text box. Without a microphone, use the suggested questions shown on the reading page.
+
+**Steps**
+
+1. Sign in, then download the [12-chapter test PDF](https://github.com/Fongkai777/voice-book/raw/main/output/pdf/alice-in-wonderland.pdf) and choose **Upload a PDF**. It is ready in about 10 seconds: 56 pages, about 148 passages. (**Try a sample** is a shorter quick start, not the long-book test.)
+2. Press **Start voice conversation** and allow the microphone when Chrome asks. When you see **Listening — go ahead**, ask a question and pause. Your words appear as a **You** message and send automatically; the answer plays aloud.
+3. Try these questions; the source page for each is in brackets:
+   - *"In chapter one, what did the label on the little bottle say, and why didn't Alice drink it right away?"* (p. 4)
+   - *"In the Queen's croquet game, what did they use as the balls and the mallets?"* (p. 33)
+   - A follow-up such as *"And what did Alice think about that?"*, which should resolve "that" from the previous turn.
+   - *"What is the name of Alice's school teacher?"* The book never says, so the app should decline rather than invent one.
+4. Click a numbered citation to read the passage, then **View in book → View PDF page** to check the original page.
+5. Optional: change **Reading preferences** (for example, Brief), rate an answer, or open **Book management** to browse pages and passages. Press **End voice** when finished; the microphone turns off.
+
+Your book, index and chat stay in this browser under your account; refreshing keeps them. More detail: [user guide](docs/USER-MANUAL.md) · [acceptance report](docs/acceptance/README.md) · [validation log, including known failures](docs/EVALUATION-LOG.md).
 
 ## Run locally
 

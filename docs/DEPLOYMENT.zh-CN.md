@@ -2,6 +2,8 @@
 
 [English](DEPLOYMENT.md) · [项目首页](../README.zh-CN.md)
 
+> **尚未部署：** [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45)（2026-10-20）修改了应用代码：检索使用独立问题、明确回答语言、只用章节标题分节。下方线上版本仍运行 `cd4187a`。下次发布后，请在此记录版本号、部署 ID 和源码对应关系。
+
 ## 当前已核实版本
 
 发布于 2026-10-19 15:50 UTC／新加坡时间 23:50。线上入口：[Voicebook](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site)。

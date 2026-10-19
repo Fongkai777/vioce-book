@@ -6,16 +6,32 @@
 
 面向 Wiz AI Builder Intern 作业的语音读书助手：上传 PDF，用麦克风提问，获得带原文引用的回答并自动播放。重点是长文档检索、可核对的依据和连续对话，而不是简单给聊天模型附上 PDF。
 
-已核实线上版本：**Sites v32**，与 GitHub 源码 [`cc28e27`](https://github.com/Fongkai777/voice-book/commit/cc28e2791303225393fb56fa7c845315e34fe5aa) 对应，发布于 2026-10-19。应用行为基线仍为 [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1)，之后仅更新文档。完整关系见[部署/提交记录](docs/DEPLOYMENT.zh-CN.md)。v28 验收截图是历史证据，不代表当前部署版本。
+**线上版本：** Sites v32，基于 [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1) 构建。[`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) 中的检索与回答语言修复已在 `main` 分支，但**尚未部署**；部署前，换话题时仍可能检索到之前问题的段落。详见[部署记录](docs/DEPLOYMENT.zh-CN.md)。
 
-## 快速体验
+## 快速体验（约 10 分钟）
 
-1. 打开网站并注册普通账号；全站每天最多自助注册两个账号，按新加坡时间重置。名额用完可联系管理员开评审账号。
-2. 上传 [12 章测试 PDF](output/pdf/alice-in-wonderland.pdf)，或者点击 **Try a sample** 快速体验。短篇示例不能代替作业要求的长书测试。
-3. 点击 **Start voice conversation**。转写直接进入聊天栏并自动发送，回答自动朗读；支持追问、打断、停止、重试和查看引用。
-4. 在 **Reading preferences** 调整语气、长度和自定义偏好；在 **Book management** 查看原文及段落。
+**开始前**
 
-验收证据见[中文报告](docs/acceptance/README.zh-CN.md)和 [70 秒截图演示](docs/acceptance/demo.mp4)。评审账号密码私下提供，不放进仓库。界面统一使用英文，模型仍可用中文回答。
+- **账号：** 请使用提交邮件中的评审账号。全站每天只开放两个自助注册名额，可能已经用完。
+- **浏览器：** 推荐桌面版 Chrome。部分应用内置或嵌入式浏览器会禁止麦克风，网站会提示 "Microphone access was denied"。
+- **建议戴耳机。** 用外放时回答声音会盖过你的声音，在回答播放中开口可能无法打断。
+- **等待时间：** 每轮语音约 15–20 秒，状态栏依次显示 *Turning speech into text → Finding the best passages → Composing a grounded answer → Preparing the spoken reply → Playing the answer*。
+- **自由提问需要麦克风。** 页面没有文字输入框；没有麦克风时，可点击阅读页上显示的建议问题。
+
+**步骤**
+
+1. 登录后下载 [12 章测试 PDF](https://github.com/Fongkai777/voice-book/raw/main/output/pdf/alice-in-wonderland.pdf)，选择 **Upload a PDF**。约 10 秒处理完成：56 页、约 148 个片段。（**Try a sample** 是更短的快速体验，不能代替长书测试。）
+2. 点击 **Start voice conversation**，Chrome 询问时允许使用麦克风。看到 **Listening — go ahead** 后提问并稍作停顿。识别文字会作为 **You** 消息自动发送，回答自动朗读。
+3. 可以试这些问题，括号内是原文页码：
+   - *"In chapter one, what did the label on the little bottle say, and why didn't Alice drink it right away?"*（p.4）
+   - *"In the Queen's croquet game, what did they use as the balls and the mallets?"*（p.33）
+   - 追问，例如 *"And what did Alice think about that?"*，应能根据上一轮理解 "that" 的指代。
+   - *"What is the name of Alice's school teacher?"* 书中没有答案，应拒答而不是编造。
+   - 也可以用中文提问，回答会使用中文。
+4. 点击回答中的数字引用查看原文段落，再点 **View in book → View PDF page** 核对原书页面。
+5. 可选：在 **Reading preferences** 调整回答方式（如 Brief）、评价回答，或在 **Book management** 浏览页面和段落。结束时点 **End voice** 关闭麦克风。
+
+书籍、索引和对话保存在当前浏览器、当前账号下，刷新后仍在。更多说明：[用户手册](docs/USER-MANUAL.zh-CN.md) · [验收报告](docs/acceptance/README.zh-CN.md) · [验证日志（含已知失败）](docs/EVALUATION-LOG.zh-CN.md)。
 
 ## 本地运行
 

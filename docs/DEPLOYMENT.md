@@ -2,6 +2,8 @@
 
 [中文](DEPLOYMENT.zh-CN.md) · [Project overview](../README.md)
 
+> **Not yet deployed:** [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) (2026-10-20) changes application code: standalone retrieval queries, an explicit answer language and chapter-only section labels. The live site below still runs `cd4187a`. After the next release, record its version, deployment ID and source mapping here.
+
 ## Current verified release
 
 Published 19 October 2026 at 15:50 UTC / 23:50 Singapore time. The live site is [Voicebook](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site).
