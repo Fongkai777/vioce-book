@@ -12,7 +12,7 @@ A voice-first PDF reading companion for the Wiz AI Builder Intern take-home assi
 
 **Before you start**
 
-- **Account:** use the reviewer account in the submission email. Self-registration is capped at two accounts per day for the whole site, so it may already be full.
+- **Account:** open the demo and choose **New to Voicebook? Create an account**, register with a username and password, then **Sign in**. No pre-issued reviewer account, ChatGPT login or personal API key is needed. Self-registration is capped at two accounts per Singapore calendar day across the whole site; the registration page shows availability. If full, try after midnight Singapore time or contact the project author for a regular account.
 - **Browser:** desktop Chrome is recommended. Some in-app or embedded browsers block microphone access; the app then shows "Microphone access was denied".
 - **Headphones** are recommended. With speakers, the answer audio can mask your voice, so speaking over a playing answer may not interrupt it.
 - **Timing:** each spoken turn takes about 15–20 seconds. The status line shows each stage: *Turning speech into text → Finding the best passages → Composing a grounded answer → Preparing the spoken reply → Playing the answer*.

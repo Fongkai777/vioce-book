@@ -12,7 +12,7 @@
 
 **开始前**
 
-- **账号：** 请使用提交邮件中的评审账号。全站每天只开放两个自助注册名额，可能已经用完。
+- **账号：** 打开网站，点击 **New to Voicebook? Create an account**，设置用户名和密码，注册后点击 **Sign in** 登录。不需要预先分配的评审账号、ChatGPT 登录或自己的 API key。全站每天限两个自助注册名额，以新加坡日期计算，注册页显示余量；满额后可在新加坡时间次日 00:00 再试，或联系项目作者创建普通账号。
 - **浏览器：** 推荐桌面版 Chrome。部分应用内置或嵌入式浏览器会禁止麦克风，网站会提示 "Microphone access was denied"。
 - **建议戴耳机。** 用外放时回答声音会盖过你的声音，在回答播放中开口可能无法打断。
 - **等待时间：** 每轮语音约 15–20 秒，状态栏依次显示 *Turning speech into text → Finding the best passages → Composing a grounded answer → Preparing the spoken reply → Playing the answer*。
