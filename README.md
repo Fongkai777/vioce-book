@@ -84,6 +84,7 @@ After generating a schema migration with `pnpm db:generate`, apply it to local D
 
 ## Documentation
 
+- [用户手册与五分钟体验流程](docs/USER-MANUAL.zh-CN.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing and answer-quality evaluation](docs/EVALUATION.md)
 - [AI-assisted workflow](docs/AI_WORKFLOW.md)
