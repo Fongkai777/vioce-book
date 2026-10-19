@@ -1,21 +1,20 @@
 import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
+import { verifiedVoiceSeconds } from "@/lib/provider-pricing";
 
 export const POST = aiRoute("transcribe", async (request: Request) => {
   try {
     assertSameOrigin(request);
     const incoming = await request.formData();
     const audio = incoming.get("audio");
-    const durationSeconds = Math.ceil(Number(incoming.get("durationSeconds")));
     if (!(audio instanceof File) || !audio.size) return jsonError(new Error("Audio recording is required"), 400);
     if (audio.size > 6 * 1024 * 1024) return jsonError(new Error("Audio recording is too large"), 413);
-    if (!Number.isFinite(durationSeconds) || durationSeconds < 1 || durationSeconds > 60) {
-      return jsonError(new Error("Voice questions must be between 1 and 60 seconds"), 400);
-    }
-
     const user = await requireApiUser();
-    await consumeQuota(user, "voice", durationSeconds);
+    let durationSeconds: number;
+    try { durationSeconds = await verifiedVoiceSeconds(audio); }
+    catch (error) { return jsonError(error, 400); }
+    await consumeQuota(user, "voice", Math.ceil(durationSeconds));
 
     const config = getOpenAIConfig();
     const form = new FormData();
@@ -28,7 +27,7 @@ export const POST = aiRoute("transcribe", async (request: Request) => {
       method: "POST",
       headers: authHeaders(config.apiKey),
       body: form,
-    });
+    }, {audioSeconds: durationSeconds});
     if (!upstream.ok) throw await openAIError(upstream);
     const payload = (await upstream.json()) as { text?: string };
     return Response.json({ text: payload.text?.trim() || "", quota: await getQuotaSnapshot(user) });

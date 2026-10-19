@@ -2,7 +2,7 @@
 
 ## Automated release checks
 
-`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The current release has **84 tests**, including a synthetic two-page PDF extraction regression; the current runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits the full dependency tree without advisory exceptions, installs the locked dependencies and receives no production/model secrets.
+`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The current suite has **98 tests**, including a synthetic two-page PDF extraction regression and token-cost settlement/WAV validation regressions; the runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits the full dependency tree without advisory exceptions, installs the locked dependencies and receives no production/model secrets.
 
 | Area | Automated evidence |
 | --- | --- |

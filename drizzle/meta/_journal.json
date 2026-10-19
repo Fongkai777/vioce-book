@@ -50,6 +50,20 @@
       "when": 1792378887934,
       "tag": "0006_clumsy_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792382250879,
+      "tag": "0007_flashy_captain_cross",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792382301557,
+      "tag": "0008_fresh_doctor_doom",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,8 @@ import { downloadBackup } from "../book-backup-controls";
 
 type Snapshot = { date: string; settings: { enabled: number; daily_budget_micros: number; max_concurrent: number };
   reservedMicros: number; providerRequests: number; requests: number; errors: number; averageMs: number; alerts: string[];
+  settledMicros: number; estimatedMicros: number; legacyMicros: number;
+  costs: Array<{model: string; policy: string; requests: number; settled_requests: number; settled_micros: number; estimated_micros: number; input_tokens: number; cached_tokens: number; output_tokens: number}>;
   metrics: Array<{route: string; status: number; count: number; total_ms: number; max_ms: number}>;
   audit: Array<{ action: string; created_at: string }> };
 async function payload(response: Response) {
@@ -54,19 +56,25 @@ export default function OperationsPanel() {
     {message && <p className="operations-message" role="status">{message}</p>}
     {data?.alerts.map(alert => <p className="admin-error" key={alert} role="alert">{alert}</p>)}
     <div className="operations-stats">
-      <div><strong>${((data?.reservedMicros || 0) / 1_000_000).toFixed(3)} / ${((data?.settings.daily_budget_micros ?? 5_000_000) / 1_000_000).toFixed(2)}</strong><span>Reserved estimate today</span></div>
+      <div><strong>${((data?.reservedMicros || 0) / 1_000_000).toFixed(4)} / ${((data?.settings.daily_budget_micros ?? 5_000_000) / 1_000_000).toFixed(2)}</strong><span>Budget used + reserved today</span></div>
       <div><strong>{data?.providerRequests || 0}</strong><span>Accepted provider requests</span></div>
       <div><strong>{data?.errors || 0} / {data?.requests || 0}</strong><span>5xx / monitored requests</span></div>
       <div><strong>{data?.averageMs || 0} ms</strong><span>Mean response latency</span></div>
     </div>
     <form className="operations-form" onSubmit={e => {e.preventDefault(); void run(() => save());}}>
-      <label>Daily reserved budget (USD)<input type="number" min="0" max="100" step="0.01" value={budget} onChange={e => setBudget(Number(e.target.value))} required disabled={busy || !data} /></label>
+      <label>Daily AI budget (USD)<input type="number" min="0" max="100" step="0.01" value={budget} onChange={e => setBudget(Number(e.target.value))} required disabled={busy || !data} /></label>
       <label>Concurrent AI requests<input type="number" min="1" max="8" value={concurrency} onChange={e => setConcurrency(Number(e.target.value))} required disabled={busy || !data} /></label>
       <label className="operations-checkbox"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} disabled={busy || !data} /> AI enabled</label>
       <button className="save-quota" disabled={busy || !data}>Save controls</button>
       <button className="danger-button" type="button" disabled={busy || !data} onClick={() => void run(() => save(true))}>Pause AI now</button>
     </form>
-    <p className="inspector-note">A conservative reservation, not your provider invoice. Failed or interrupted requests are not refunded. The daily limit resets at midnight Singapore time. Configure a separate provider spending limit; custom model pricing and audio duration can differ.</p>
+    <p className="inspector-note">Usage-priced: ${((data?.settledMicros || 0) / 1_000_000).toFixed(4)} · Estimates / pending: ${((data?.estimatedMicros || 0) / 1_000_000).toFixed(4)} · Legacy / restored estimates: ${((data?.legacyMicros || 0) / 1_000_000).toFixed(4)}</p>
+    <p className="inspector-note">Known models reserve an estimate, then reconcile against validated provider token usage when available. MP3 speech, missing usage and failed requests keep estimates; old records cannot be repriced without usage. This is not a provider invoice. Resets at midnight Singapore time. Keep a separate provider spending limit.</p>
+    <details className="backup-panel"><summary>Token usage & cost by model</summary>
+      <p>Input includes cached tokens. Output includes reasoning tokens. Prices verified October 19, 2026; unverified providers retain fallback estimates. No conversation content is recorded here.</p>
+      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Model / policy</th><th>Usage-priced / requests</th><th>Input / cached / output tokens</th><th>Usage-priced USD</th><th>Estimated USD</th></tr></thead>
+        <tbody>{data?.costs?.map(c => <tr key={`${c.model}:${c.policy}`}><td>{c.model}<br />{c.policy}</td><td>{c.settled_requests} / {c.requests}</td><td>{c.input_tokens} / {c.cached_tokens} / {c.output_tokens}</td><td>${(c.settled_micros / 1_000_000).toFixed(6)}</td><td>${(c.estimated_micros / 1_000_000).toFixed(6)}</td></tr>)}</tbody></table></div>
+    </details>
     <details className="backup-panel"><summary>Request metrics & recent changes</summary>
       <p>Login and AI routes only. Counts, status and latency; no prompts or audio. Manual refresh, no scheduled monitoring.</p>
       <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Route</th><th>Status</th><th>Requests</th><th>Mean / max ms</th></tr></thead>

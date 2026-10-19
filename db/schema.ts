@@ -1,4 +1,4 @@
-import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const operationsSettings = sqliteTable("operations_settings", {
   id: integer("id").primaryKey(),
@@ -17,6 +17,18 @@ export const operationsLeases = sqliteTable("operations_leases", {
   userId: text("user_id").notNull(),
   expiresAt: integer("expires_at").notNull(),
 });
+// No prompts, audio, account identifiers or credentials. Preserved on restore.
+export const operationsCosts = sqliteTable("operations_costs", {
+  id: text("id").primaryKey(),
+  date: text("date").notNull(),
+  model: text("model").notNull(),
+  policy: text("policy").notNull(),
+  reservedMicros: integer("reserved_micros").notNull(),
+  settledMicros: integer("settled_micros"),
+  inputTokens: integer("input_tokens"),
+  cachedTokens: integer("cached_tokens"),
+  outputTokens: integer("output_tokens"),
+}, table => [index("operations_costs_date_idx").on(table.date)]);
 export const operationsMetrics = sqliteTable("operations_metrics", {
   date: text("date").notNull(),
   route: text("route").notNull(),

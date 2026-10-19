@@ -21,7 +21,7 @@ Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder In
 - Editable transcripts, suggested questions, automatic spoken replies and interruption controls.
 - Per-user daily question and voice allowances backed by D1.
 - An administrator dashboard for reviewing usage and adjusting individual limits.
-- A global US$5/day **reserved estimate** budget, emergency pause, bounded AI requests and atomic concurrency gates; separate from provider billing.
+- A global US$5/day budget with model-specific token pricing, pre-request reservations and provider-usage reconciliation; emergency pause and atomic concurrency gates. Audio/fallback estimates are labeled separately; this is not a provider invoice. See [Pricing](docs/PRICING.md).
 - Administrator health/error/latency metrics and manual encrypted server backups; account-scoped book/PDF/index/chat backup and restore in Book management.
 - Offline unit/UI and SQLite-backed route tests for retrieval, storage, history, voice, authentication, quotas and account isolation.
 

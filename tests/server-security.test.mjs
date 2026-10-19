@@ -4,6 +4,7 @@ import {registerHooks} from "node:module";
 import {readFileSync,existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import ts from "typescript";
+import {pcmWav} from "../lib/voice-turn.ts";
 import {env,jar,reset,close,database} from "./fixtures/server-runtime.mjs";
 const root=new URL("../",import.meta.url),host=new URL("./fixtures/server-runtime.mjs",import.meta.url).href;
 const hook=registerHooks({
@@ -178,6 +179,78 @@ test("provider wrapper holds lease through body, charges failures, and paused se
   globalThis.fetch=async()=>{assert.fail("paused service must not fetch");};
   await assert.rejects(ops.providerFetch("embed","alice","https://provider.invalid",{body:"{}"}),{status:429});
   assert.equal(ops.estimateReservation("transcribe",new FormData()),1000000);
+});
+test("provider usage reconciles exactly once, preserving original-day accounting and legacy spend",async()=>{
+  const now=Date.parse("2026-10-18T15:59:00Z");
+  const id=await ops.reserveProvider("alice",10000,now);
+  await ops.reserveProvider("bob",3000,now+181000); // expire lease and cross Singapore midnight
+  const usage={micros:1200,inputTokens:800,cachedTokens:0,outputTokens:500};
+  await Promise.all([ops.settleProvider(id,usage),ops.settleProvider(id,usage)]);
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage WHERE date='2026-10-18'").get().reserved_micros,1200);
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage WHERE date='2026-10-19'").get().reserved_micros,3000);
+  assert.equal(database.prepare("SELECT settled_micros FROM operations_costs WHERE id=?").get(id).settled_micros,1200);
+});
+test("settlement records costs above reserve without hiding overspend, preventing further admission",async()=>{
+  const id=await ops.reserveProvider("alice",1000);
+  await ops.settleProvider(id,{micros:6000000,inputTokens:100,cachedTokens:0,outputTokens:100});
+  await ops.releaseProvider(id);
+  await assert.rejects(ops.reserveProvider("bob",1),/remaining daily AI budget/);
+  const snapshot=await ops.operationsSnapshot();assert.equal(snapshot.settledMicros,6000000);assert.equal(snapshot.estimatedMicros,0);
+});
+test("known provider usage settles, incomplete/error responses stay reserved, old estimates are identifiable",async()=>{
+  const url="https://api.openai.com/v1/responses",body=JSON.stringify({model:"gpt-5-mini",input:"hello",max_output_tokens:1400});
+  globalThis.fetch=async()=>Response.json({usage:{input_tokens:10000,output_tokens:1000,input_tokens_details:{cached_tokens:2000}}});
+  await ops.providerFetch("answer","a",url,{body});
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,4050);
+  globalThis.fetch=async()=>Response.json({usage:{input_tokens:1,output_tokens:1}},{status:500});
+  await ops.providerFetch("answer","a",url,{body});
+  globalThis.fetch=async()=>Response.json({output_text:"test",usage:{input_tokens:"1",output_tokens:1}});
+  await ops.providerFetch("answer","a",url,{body});
+  database.prepare("UPDATE operations_usage SET reserved_micros=reserved_micros+12345").run();
+  const snapshot=await ops.operationsSnapshot();assert.equal(snapshot.settledMicros,4050);assert.equal(snapshot.legacyMicros,12345);
+  assert.equal(snapshot.estimatedMicros,2*ops.estimateReservation("answer",body,url));
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_leases").get().n,0);
+});
+test("budget denial reasons distinguish pause, concurrency and insufficient remaining budget",async()=>{
+  await ops.reserveProvider("a",1000);await ops.reserveProvider("a",1000);
+  await assert.rejects(ops.reserveProvider("a",1000),/Too many AI requests/);
+  database.prepare("UPDATE operations_settings SET enabled=0").run();
+  await assert.rejects(ops.reserveProvider("b",1000),/paused by the administrator/);
+});
+test("transcription ignores forged client duration and rejects malformed audio before quota/provider usage",async()=>{
+  const user=await reader();await login();
+  const form=new FormData();form.set("audio",new File(["invalid audio"],"test.wav"));form.set("durationSeconds","1");
+  assert.equal((await routes.transcribe.POST(new Request("https://voicebook.test/api/transcribe",{method:"POST",body:form}))).status,400);
+  assert.equal((await quota.getQuotaSnapshot(user)).voice.usedSeconds,0);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_costs").get().n,0);
+});
+test("valid transcription bills verified WAV seconds and settles upstream tokens without forwarding client metadata",async()=>{
+  const user=await reader();await login();
+  const oldKey=process.env.OPENAI_API_KEY,oldBase=process.env.OPENAI_BASE_URL,oldModel=process.env.OPENAI_TRANSCRIBE_MODEL;
+  process.env.OPENAI_API_KEY="synthetic-key";process.env.OPENAI_BASE_URL="https://api.openai.com/v1";process.env.OPENAI_TRANSCRIBE_MODEL="gpt-4o-mini-transcribe";
+  try {
+    globalThis.fetch=async(url,init)=>{
+      assert.equal(init.body.has("durationSeconds"),false);
+      assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_leases").get().n,1);
+      return Response.json({text:"synthetic words",usage:{input_tokens:1000,output_tokens:100,total_tokens:1100}});
+    };
+    const form=new FormData();form.set("audio",new File([pcmWav(new Float32Array(16000*10),16000)],"question.wav"));form.set("durationSeconds","1");
+    const response=await routes.transcribe.POST(new Request("https://voicebook.test/api/transcribe",{method:"POST",body:form}));
+    assert.equal(response.status,200);assert.equal((await response.json()).text,"synthetic words");
+    assert.equal((await quota.getQuotaSnapshot(user)).voice.usedSeconds,10);
+    assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,1750);
+  } finally {
+    for(const [key,value] of [["OPENAI_API_KEY",oldKey],["OPENAI_BASE_URL",oldBase],["OPENAI_TRANSCRIBE_MODEL",oldModel]]){
+      if(value===undefined)delete process.env[key];else process.env[key]=value;
+    }
+  }
+});
+test("settlement transaction failure rolls back the daily adjustment and retains the reservation",async()=>{
+  const id=await ops.reserveProvider("alice",10000);
+  database.exec("CREATE TRIGGER reject_settle BEFORE UPDATE ON operations_costs BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+  await assert.rejects(ops.settleProvider(id,{micros:100,inputTokens:100,cachedTokens:0,outputTokens:0}));
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,10000);
+  assert.equal(database.prepare("SELECT settled_micros FROM operations_costs").get().settled_micros,null);
 });
 test("oversized/chunked AI and login bodies are rejected before parsing or provider calls",async()=>{
   await reader();await login();

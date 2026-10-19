@@ -1,0 +1,1 @@
+CREATE INDEX `operations_costs_date_idx` ON `operations_costs` (`date`);

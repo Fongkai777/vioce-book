@@ -3,13 +3,14 @@ import { ApiError, apiErrorResponse } from "./errors";
 import { singaporeDate, requireApiUser } from "./quota";
 import { assertSameOrigin } from "./request-security";
 import { boundedRequest, readBounded } from "./bounded-request";
+import { quoteProvider, priceUsage, type ProviderOperation, type PriceQuote, type PricedUsage } from "./provider-pricing";
+export type { ProviderOperation } from "./provider-pricing";
 
 export function operationsDatabase() {
   if (!env.DB) throw new Error("Operations database is unavailable");
   return env.DB;
 }
 
-export type ProviderOperation = "answer" | "embed" | "ocr" | "transcribe" | "speech" | "history/summary";
 type Settings = { daily_budget_micros: number; enabled: number; max_concurrent: number; updated_at: string };
 const limits: Record<ProviderOperation, number> = {
   answer: 450_000, embed: 3_200_000, ocr: 8_010_000, transcribe: 6_500_000, speech: 40_000, "history/summary": 32_000,
@@ -24,20 +25,10 @@ export async function auditOperation(actor: string, action: string) {
   await operationsDatabase().prepare("INSERT INTO operations_audit VALUES(?,?,?,?)").bind(crypto.randomUUID(), actor, action, new Date().toISOString()).run();
 }
 
-// Reservation policy v1, NOT a provider invoice. UTF-8 byte count deliberately
-// overestimates text tokens. Unknown/custom model prices need operator review.
-// No refunds: a timeout/abort can still have incurred provider charges.
-export function estimateReservation(kind: ProviderOperation, body: BodyInit | null | undefined) {
-  if (kind === "transcribe") return 1_000_000; // fixed $1 per capped audio upload, ignores client duration
-  const size = typeof body === "string" ? new TextEncoder().encode(body).length : 0;
-  if (!size) throw new ApiError("Cannot reserve provider usage", 503);
-  if (kind === "ocr") return 500_000;
-  if (kind === "speech") return Math.max(10_000, size * 100);
-  if (kind === "embed") return Math.max(1_000, size * 2);
-  const output = kind === "history/summary" ? 1800 : 2200;
-  return Math.max(10_000, size * 10 + output * 40);
+export function estimateReservation(kind: ProviderOperation, body: BodyInit | null | undefined, url = "", audioSeconds?: number) {
+  return quoteProvider(kind, body, url, audioSeconds).micros;
 }
-export async function reserveProvider(userId: string, amount: number, now = Date.now()) {
+export async function reserveProvider(userId: string, amount: number, now = Date.now(), quote?: PriceQuote) {
   if (!Number.isSafeInteger(amount) || amount < 1) throw new ApiError("Invalid reservation", 400);
   await operationsSettings();
   const date = singaporeDate(new Date(now)), id = crypto.randomUUID();
@@ -49,19 +40,59 @@ export async function reserveProvider(userId: string, amount: number, now = Date
         AND (SELECT COUNT(*) FROM operations_leases)<max_concurrent)
       AND (SELECT COUNT(*) FROM operations_leases WHERE user_id=?)<2`).bind(amount, date, amount, userId),
     operationsDatabase().prepare("INSERT INTO operations_leases(id,user_id,expires_at) SELECT ?,?,? WHERE changes()=1").bind(id, userId, now + 180_000),
+    operationsDatabase().prepare("INSERT INTO operations_costs(id,date,model,policy,reserved_micros) SELECT ?,?,?,?,? WHERE changes()=1")
+      .bind(id, date, quote?.model || "unspecified", quote?.policy || "unverified-fallback-v1", amount),
   ]);
-  if (result[3].meta.changes !== 1) throw new ApiError("AI is paused, busy, or the site daily budget has been reached. Please try later or contact the administrator.", 429);
+  if (result[3].meta.changes !== 1) {
+    // Read-only diagnosis after the atomic gate failed. This never retries or
+    // bypasses admission; state may change before the user retries.
+    const settings = await operationsSettings();
+    if (!settings.enabled) throw new ApiError("AI is paused by the administrator. Please contact the administrator.", 429);
+    const usage = await operationsDatabase().prepare("SELECT reserved_micros FROM operations_usage WHERE date=?").bind(date).first<{reserved_micros: number}>();
+    if ((usage?.reserved_micros || 0) + amount > settings.daily_budget_micros) {
+      throw new ApiError("The site's remaining daily AI budget cannot cover this request. It resets at midnight Singapore time. Please contact the administrator.", 429);
+    }
+    throw new ApiError("Too many AI requests are running. Please wait a moment and retry.", 429);
+  }
   return id;
 }
 export async function releaseProvider(id: string) { await operationsDatabase().prepare("DELETE FROM operations_leases WHERE id=?").bind(id).run(); }
 
-export async function providerFetch(kind: ProviderOperation, userId: string, url: string, init: RequestInit) {
-  const lease = await reserveProvider(userId, estimateReservation(kind, init.body));
+export async function settleProvider(id: string, usage: PricedUsage) {
+  if (![usage.micros, usage.inputTokens, usage.cachedTokens, usage.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) || usage.cachedTokens > usage.inputTokens) {
+    throw new ApiError("Invalid provider usage", 502);
+  }
+  // Idempotent and atomic. Settle against the original Singapore day, even if
+  // midnight passed or the concurrency lease expired. Never clamp a real cost
+  // to its estimate: an underestimate must block subsequent requests.
+  await operationsDatabase().batch([
+    operationsDatabase().prepare(`UPDATE operations_usage SET reserved_micros=reserved_micros+?-
+      (SELECT reserved_micros FROM operations_costs WHERE id=?)
+      WHERE date=(SELECT date FROM operations_costs WHERE id=? AND settled_micros IS NULL)`)
+      .bind(usage.micros, id, id),
+    operationsDatabase().prepare(`UPDATE operations_costs SET settled_micros=?,input_tokens=?,cached_tokens=?,output_tokens=?
+      WHERE id=? AND settled_micros IS NULL AND changes()=1`)
+      .bind(usage.micros, usage.inputTokens, usage.cachedTokens, usage.outputTokens, id),
+  ]);
+}
+
+export async function providerFetch(kind: ProviderOperation, userId: string, url: string, init: RequestInit, options?: {audioSeconds: number}) {
+  const quote = quoteProvider(kind, init.body, url, options?.audioSeconds);
+  const lease = await reserveProvider(userId, quote.micros, Date.now(), quote);
   const timeout = AbortSignal.timeout(120_000);
   try {
     const upstream = await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
     // Keep lease through body consumption (including TTS), not just response headers.
     const body = await readBounded(upstream.body, 16_000_000);
+    if (upstream.ok && upstream.headers.get("content-type")?.includes("application/json")) {
+      let payload: unknown;
+      try { payload = JSON.parse(new TextDecoder().decode(body)); } catch { /* retain reservation if usage is absent/unreadable */ }
+      const usage = priceUsage(quote, payload);
+      if (usage) {
+        try { await settleProvider(lease, usage); }
+        catch { console.error(JSON.stringify({event:"cost_settlement_failed", route:kind})); }
+      }
+    }
     return new Response(body, { status: upstream.status, headers: upstream.headers });
   } finally { await releaseProvider(lease); }
 }
@@ -99,15 +130,26 @@ export async function operationsSnapshot() {
   // Lazy retention on admin refresh; no scheduler or background job required.
   const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
   await operationsDatabase().prepare("DELETE FROM operations_metrics WHERE date<?").bind(cutoff).run();
-  const [usage, metrics, audit] = await Promise.all([
+  const [usage, metrics, audit, costs] = await Promise.all([
     operationsDatabase().prepare("SELECT * FROM operations_usage WHERE date=?").bind(date).first<{ reserved_micros: number; requests: number }>(),
     operationsDatabase().prepare("SELECT * FROM operations_metrics WHERE date=? ORDER BY route,status").bind(date).all(),
     operationsDatabase().prepare("SELECT action,created_at FROM operations_audit ORDER BY created_at DESC LIMIT 20").all(),
+    operationsDatabase().prepare(`SELECT model,policy,COUNT(*) AS requests,
+      SUM(CASE WHEN settled_micros IS NOT NULL THEN 1 ELSE 0 END) AS settled_requests,
+      SUM(COALESCE(settled_micros,0)) AS settled_micros,
+      SUM(CASE WHEN settled_micros IS NULL THEN reserved_micros ELSE 0 END) AS estimated_micros,
+      SUM(COALESCE(input_tokens,0)) AS input_tokens,SUM(COALESCE(cached_tokens,0)) AS cached_tokens,
+      SUM(COALESCE(output_tokens,0)) AS output_tokens FROM operations_costs WHERE date=? GROUP BY model,policy`).bind(date).all(),
   ]);
   const rows = metrics.results as Array<{count: number; status: number; total_ms: number}>;
   const requests = rows.reduce((n, r) => n + r.count, 0), errors = rows.reduce((n, r) => n + (r.status >= 500 ? r.count : 0), 0);
   const reserved = usage?.reserved_micros || 0;
+  const costRows = costs.results as Array<{settled_micros: number; estimated_micros: number}>;
+  const settledMicros = costRows.reduce((sum, row) => sum + row.settled_micros, 0);
+  const estimatedMicros = costRows.reduce((sum, row) => sum + row.estimated_micros, 0);
+  const legacyMicros = Math.max(0, reserved - settledMicros - estimatedMicros);
   return { date, settings, reservedMicros: reserved, providerRequests: usage?.requests || 0, requests, errors,
+    settledMicros, estimatedMicros, legacyMicros, costs:costs.results,
     averageMs: requests ? Math.round(rows.reduce((n, r) => n + r.total_ms, 0) / requests) : 0,
     metrics: metrics.results, audit: audit.results, alerts: [
       ...(!settings.enabled ? ["AI requests are paused."] : []),

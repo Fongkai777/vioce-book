@@ -7,7 +7,7 @@ export async function GET() {
     if (!env.DB) throw new Error("Database is unavailable");
     // Readiness covers real D1 access and required schema, not a paid provider probe.
     await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM operations_settings),
-      (SELECT COUNT(*) FROM operations_usage), (SELECT COUNT(*) FROM operations_leases),
+      (SELECT COUNT(*) FROM operations_usage), (SELECT COUNT(*) FROM operations_leases), (SELECT COUNT(*) FROM operations_costs),
       (SELECT COUNT(*) FROM operations_metrics), (SELECT COUNT(*) FROM operations_audit),
       (SELECT COUNT(*) FROM app_users), (SELECT COUNT(*) FROM daily_usage),
       (SELECT COUNT(*) FROM reader_preferences), (SELECT COUNT(*) FROM answer_feedback),
