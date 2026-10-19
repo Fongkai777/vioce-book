@@ -23,7 +23,8 @@ const hook=registerHooks({
 });
 const auth=await import("../lib/auth.ts"),quota=await import("../lib/quota.ts"),errors=await import("../lib/errors.ts"),provider=await import("../lib/openai.ts");
 const ops=await import("../lib/operations.ts"),backup=await import("../lib/server-backup.ts"),cryptoBackup=await import("../lib/backup-crypto.ts");
-const paths=["auth/login","auth/logout","admin/users","admin/feedback","admin/operations","admin/backup","health","quota","samples","preferences","feedback","embed","answer","transcribe","speech","ocr","history/summary"];
+const registration=await import("../lib/registration.ts");
+const paths=["auth/login","auth/register","auth/logout","admin/users","admin/feedback","admin/operations","admin/backup","health","quota","samples","preferences","feedback","embed","answer","transcribe","speech","ocr","history/summary"];
 const routes=Object.fromEntries(await Promise.all(paths.map(async path=>[path,await import(`../app/api/${path}/route.ts`)])));
 hook.deregister();
 const originalFetch=globalThis.fetch;
@@ -74,6 +75,80 @@ test("every mutation route rejects foreign origins before auth, parsing or provi
     assert.equal(response.status,403,`${path} ${method}`);
   }
   const response=await routes["auth/login"].POST(request("auth/login",{},"POST",{"sec-fetch-site":"cross-site"}));assert.equal(response.status,403);
+});
+
+test("public registration reports capacity, creates only a regular user, and permits normal login",async()=>{
+  const before=await routes["auth/register"].GET(new Request("https://voicebook.test/api/auth/register"));
+  assert.equal(before.status,200);assert.equal(before.headers.get("cache-control"),"no-store");
+  assert.equal((await before.json()).remaining,2);
+  const response=await routes["auth/register"].POST(request("auth/register",{username:" Reviewer ",password:"synthetic-reader-password",role:"admin",questionLimit:500,userId:"admin"}));
+  assert.equal(response.status,201);assert.equal(jar.size,0);
+  const row=database.prepare("SELECT * FROM app_users WHERE username='reviewer'").get();
+  assert.equal(row.role,"user");assert.notEqual(row.password_hash,"synthetic-reader-password");
+  assert.equal((await registration.registrationStatus()).remaining,1);
+  const user=(await login("reviewer")).user;
+  assert.equal((await quota.getQuotaSnapshot(user)).questions.limit,20);
+  assert.equal((await quota.getQuotaSnapshot(user)).voice.limitSeconds,600);
+  assert.equal((await routes["admin/users"].GET()).status,403);
+});
+
+test("self-registration admits exactly two across concurrent distinct IPs; admin creation is separate",async()=>{
+  const results=await Promise.all(Array.from({length:12},(_,i)=>routes["auth/register"].POST(request("auth/register",{
+    username:`visitor${i}`,password:"synthetic-reader-password"
+  },"POST",{"cf-connecting-ip":`192.0.2.${i+1}`}))));
+  assert.equal(results.filter(r=>r.status===201).length,2);
+  assert.equal(results.filter(r=>r.status===429).length,10);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM app_users").get().n,2);
+  assert.equal((await registration.registrationStatus()).remaining,0);
+  await reader("invited");assert.equal((await registration.registrationStatus()).remaining,0);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM app_users").get().n,3);
+});
+
+test("invalid, reserved and duplicate usernames never consume registration places",async()=>{
+  const call=body=>routes["auth/register"].POST(request("auth/register",body));
+  for(const body of [null,{}, {username:"ab",password:"synthetic-reader-password"},{username:"valid",password:"short"},
+    {username:"valid",password:"x".repeat(129)}, {username:"valid",password:"synthetic-reader-password",displayName:"x".repeat(81)}]) {
+    assert.equal((await call(body)).status,400);
+  }
+  assert.equal((await call({username:"AdMiN",password:"synthetic-reader-password"})).status,409);
+  await reader("existing");
+  assert.equal((await call({username:"EXISTING",password:"synthetic-reader-password"})).status,409);
+  assert.equal((await registration.registrationStatus()).remaining,2);
+  assert.equal((await call({username:"new-reader",password:"synthetic-reader-password"})).status,201);
+  assert.equal((await registration.registrationStatus()).remaining,1);
+});
+
+test("duplicate concurrent registrations consume just one place; failed database writes roll back",async()=>{
+  const outcomes=await Promise.allSettled(Array.from({length:4},()=>registration.registerUserAccount({username:"same-user",password:"synthetic-reader-password"})));
+  assert.equal(outcomes.filter(r=>r.status==="fulfilled").length,1);
+  assert.equal((await registration.registrationStatus()).remaining,1);
+  database.exec("CREATE TRIGGER reject_test_account BEFORE INSERT ON app_users WHEN NEW.username='fail-user' BEGIN SELECT RAISE(ABORT,'test failure'); END;");
+  await assert.rejects(registration.registerUserAccount({username:"fail-user",password:"synthetic-reader-password"}));
+  assert.equal((await registration.registrationStatus()).remaining,1);
+});
+
+test("registration throttles by IP even when usernames change and bounds bodies before hashing",async()=>{
+  for(let i=0;i<10;i++)assert.equal((await routes["auth/register"].POST(request("auth/register",{username:`visitor${i}`,password:"short"}))).status,400);
+  assert.equal((await routes["auth/register"].POST(request("auth/register",{username:"different",password:"synthetic-reader-password"}))).status,429);
+  assert.equal((await routes["auth/register"].POST(request("auth/register",{username:"large",password:"x".repeat(5000)}))).status,413);
+  assert.equal((await registration.registrationStatus()).remaining,2);
+});
+
+test("registration capacity resets at Singapore midnight, not UTC; deletion never refunds a place",async()=>{
+  database.prepare("INSERT INTO auth_registration_days VALUES(?,2)").run("2026-10-18");
+  assert.equal((await registration.registrationStatus(new Date("2026-10-18T15:59:59Z"))).remaining,0);
+  assert.equal((await registration.registrationStatus(new Date("2026-10-18T16:00:00Z"))).remaining,2);
+  const id=await registration.registerUserAccount({username:"delete-me",password:"synthetic-reader-password"});
+  database.prepare("DELETE FROM app_users WHERE user_id=?").run(id);
+  assert.equal((await registration.registrationStatus()).remaining,1);
+});
+
+test("restoring an old backup preserves self-registration admission counters",async()=>{
+  await auth.ensureBootstrapAdmin();const snapshot=await backup.exportServerSnapshot();
+  await registration.registerUserAccount({username:"after-backup",password:"synthetic-reader-password"});
+  await ops.operationsSettings();database.prepare("UPDATE operations_settings SET enabled=0").run();
+  await backup.restoreServerSnapshot(snapshot,"test-admin");
+  assert.equal((await registration.registrationStatus()).remaining,1);
 });
 test("private and model routes reject unauthenticated requests without any external fetch",async()=>{
   for(const path of ["quota","samples","preferences","admin/users","admin/feedback"]){

@@ -11,7 +11,8 @@ export async function GET() {
       (SELECT COUNT(*) FROM operations_metrics), (SELECT COUNT(*) FROM operations_audit),
       (SELECT COUNT(*) FROM app_users), (SELECT COUNT(*) FROM daily_usage),
       (SELECT COUNT(*) FROM reader_preferences), (SELECT COUNT(*) FROM answer_feedback),
-      (SELECT COUNT(*) FROM auth_sessions), (SELECT COUNT(*) FROM quota_overrides)`).first();
+      (SELECT COUNT(*) FROM auth_sessions), (SELECT COUNT(*) FROM quota_overrides),
+      (SELECT COUNT(*) FROM auth_registration_days)`).first();
     return Response.json({
       ok: true, database: "ready", provider: "configured-not-probed",
       models: {

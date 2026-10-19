@@ -2,7 +2,9 @@
 
 ## Automated release checks
 
-`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The current suite has **102 tests**, including a synthetic two-page PDF extraction regression, token-cost settlement/WAV validation, and admin-only atomic legacy correction regressions; the runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits the full dependency tree without advisory exceptions, installs the locked dependencies and receives no production/model secrets.
+Self-registration adds seven regression tests (109 total): concurrent admission across distinct IPs, regular-only roles/default quotas/login, invalid/reserved/duplicate usernames, failed-write rollback, per-IP throttling/body bounds, Singapore-midnight rollover, deletion and backup-restore preservation of registration counters. These run against isolated SQLite, not production accounts; no real daily registration places are consumed. On 2026-10-19 the built Worker also passed all ten migrations in a fresh disposable Wrangler database. Chrome verified registration success and subsequent login as a regular reader with 20 questions / 10 voice minutes; five simultaneous HTTP registrations competing for the final place produced one 201 and four 429 responses, with zero places remaining. No live account was created.
+
+`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The current suite has **109 tests**, including self-registration admission, a synthetic two-page PDF extraction regression, token-cost settlement/WAV validation, and admin-only atomic legacy correction regressions; the runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits the full dependency tree without advisory exceptions, installs the locked dependencies and receives no production/model secrets.
 
 | Area | Automated evidence |
 | --- | --- |

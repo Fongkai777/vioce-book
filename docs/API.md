@@ -5,6 +5,8 @@ All paths are same-origin. Private endpoints derive identity from the HttpOnly `
 | Route | Method / access | Input / behavior |
 | --- | --- | --- |
 | `/api/auth/login` | POST, public and throttled | JSON `username`, `password`; sets seven-day session cookie |
+| `/api/auth/register` | GET, public, no-store | Singapore `date`, `limit: 2`, `remaining`, `timeZone`; advisory availability only |
+| `/api/auth/register` | POST, public, per-IP throttled | JSON `username`, `password`, optional `displayName`; atomically admits at most 2 new regular accounts per Singapore day. 201 requires subsequent login; 409 unavailable username; 429 full or throttled. Client-supplied role/limit/identity ignored |
 | `/api/auth/logout` | POST | Revokes current server session and expires cookie |
 | `/api/quota` | GET, signed in | Current account's daily usage, limits and role |
 | `/api/admin/users` | GET / POST / PATCH, admin | List users; create regular account; set `userId`, `questionLimit` (0–500), `voiceMinutesLimit` (0–600) |

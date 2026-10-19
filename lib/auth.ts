@@ -38,8 +38,17 @@ async function sha256(value: string) {
 
 export async function enforceLoginRateLimit(request: Request, usernameInput: string) {
   const username = normalizeUsername(usernameInput);
+  return enforceAuthRateLimit(request, `login:${username}`, "Too many login attempts. Try again in 15 minutes");
+}
+
+export async function enforceRegistrationRateLimit(request: Request) {
+  // One bucket per address, not per username: rotating names must not bypass it.
+  return enforceAuthRateLimit(request, "registration", "Too many registration attempts. Try again in 15 minutes");
+}
+
+async function enforceAuthRateLimit(request: Request, scope: string, message: string) {
   const address = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  const attemptKey = await sha256(`${address}:${username}`);
+  const attemptKey = await sha256(`${scope}:${address}`);
   const now = new Date();
   const cutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
   await db().prepare(`
@@ -51,7 +60,7 @@ export async function enforceLoginRateLimit(request: Request, usernameInput: str
   `).bind(attemptKey, now.toISOString(), cutoff, cutoff).run();
   const row = await db().prepare("SELECT attempts FROM auth_login_attempts WHERE attempt_key = ?")
     .bind(attemptKey).first<{ attempts: number }>();
-  if ((row?.attempts || 0) > 10) throw new ApiError("Too many login attempts. Try again in 15 minutes", 429);
+  if ((row?.attempts || 0) > 10) throw new ApiError(message, 429);
   return attemptKey;
 }
 
@@ -167,10 +176,16 @@ export async function requirePageUser(returnTo: string) {
   redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 }
 
-export async function createUserAccount(input: { username: string; password: string; displayName?: string }) {
+export function validateAccountInput(input: { username: string; password: string; displayName?: string }) {
   const username = normalizeUsername(input.username);
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) throw new ApiError("Username must be 3-32 letters, numbers, dots, dashes, or underscores", 400);
   if (input.password.length < 10 || input.password.length > 128) throw new ApiError("Password must be 10-128 characters", 400);
+  if ((input.displayName?.trim().length || 0) > 80) throw new ApiError("Display name must be at most 80 characters", 400);
+  return username;
+}
+
+export async function createUserAccount(input: { username: string; password: string; displayName?: string }) {
+  const username = validateAccountInput(input);
   const now = new Date().toISOString();
   const userId = crypto.randomUUID();
   try {

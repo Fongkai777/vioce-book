@@ -364,6 +364,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .login-card .primary-action { width: 100%; margin-top: 2px; justify-content: center; }
 .login-card > small { display: block; margin-top: 24px; color: #8a948e; text-align: center; font-size: 9px; }
 .login-error { border-radius: 9px; padding: 10px 12px; background: #f8e0d9; color: #853e30; font-size: 11px; }
+.login-success, .registration-status { margin-top: 18px; border-radius: 10px; padding: 12px; background: #e6ede7; color: #224d40; font-size: 13px; line-height: 1.5; }
+.registration-status p { margin: 8px 0 0; }
+.login-switch { display: block; margin: 20px auto 0; padding: 8px 0; border: 0; background: transparent; color: #245648; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 13px; }
+.login-switch:focus-visible { outline: 2px solid #245648; outline-offset: 4px; }
+.login-switch:disabled { opacity: .5; cursor: wait; }
+.password-help { color: #607068; font-size: 12px; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0% { opacity: .8; transform: scale(.96); } 70%, 100% { opacity: 0; transform: scale(1.2); } }

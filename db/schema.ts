@@ -88,6 +88,12 @@ export const authLoginAttempts = sqliteTable("auth_login_attempts", {
   attempts: integer("attempts").notNull().default(0),
 });
 
+// Control-plane counter: retained on restore; account deletion never frees slots.
+export const authRegistrationDays = sqliteTable("auth_registration_days", {
+  date: text("date").primaryKey(),
+  registrations: integer("registrations").notNull().default(0),
+});
+
 export const quotaOverrides = sqliteTable("quota_overrides", {
   userId: text("user_id").primaryKey().references(() => appUsers.userId, { onDelete: "cascade" }),
   questionLimit: integer("question_limit").notNull().default(20),

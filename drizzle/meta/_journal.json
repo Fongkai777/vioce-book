@@ -64,6 +64,13 @@
       "when": 1792382301557,
       "tag": "0008_fresh_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792394729770,
+      "tag": "0009_strong_gateway",
+      "breakpoints": true
     }
   ]
 }

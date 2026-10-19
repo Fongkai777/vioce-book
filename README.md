@@ -46,7 +46,7 @@ pnpm db:migrate:local
 pnpm dev
 ```
 
-Open the printed URL (normally port 5173). Microphone access requires localhost or HTTPS. Log in with ADMIN_USERNAME / ADMIN_PASSWORD, then create a regular reviewer account at `/admin`. The bootstrap password creates an account only once; editing the environment later does not reset an existing password.
+Open the printed URL (normally port 5173). Microphone access requires localhost or HTTPS. Reviewers can choose **Create an account** on `/login`: at most **two successful self-registrations across the site per Singapore calendar day**, resetting at 00:00 UTC+8. New accounts are regular users (default 20 questions / 10 voice minutes per day, plus the shared site budget). After registering, sign in with the new password. If places are full, an administrator can still create regular accounts at `/admin`; these do not consume self-registration places. Log in as administrator with ADMIN_USERNAME / ADMIN_PASSWORD. The bootstrap password creates an account only once; editing the environment later does not reset an existing password.
 
 `db:migrate:local` targets the emulator only. Older databases created by manually executing SQL need their migration history reconciled first. Do not delete an existing database to resolve a migration mismatch.
 
