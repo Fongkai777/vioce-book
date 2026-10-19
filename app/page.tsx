@@ -31,6 +31,7 @@ import { PausableAudio } from "@/lib/pausable-audio";
 import { beginReply, settleReply, recoverReplies, updateVoiceMessage, leaveUnsent, type Exchange } from "@/lib/chat-turns";
 import ReplyProgress from "./reply-progress";
 import QuestionMessage from "./question-message";
+import { RetrievalRetryCache } from "@/lib/retrieval-retry";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "reviewing" | "voicing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
@@ -94,6 +95,7 @@ export default function Home() {
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const summaries = useRef<SummaryCache>({});
+  const retrievalRetries = useRef(new RetrievalRetryCache<Chunk[]>());
   const [contextNote, setContextNote] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const audioContext = useRef<AudioContext | null>(null);
@@ -124,6 +126,7 @@ export default function Home() {
 
   useEffect(() => { conversationEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [exchanges, stage]);
   useEffect(() => () => {
+    retrievalRetries.current.clear();
     voiceGeneration.current++; turnGate.current.cancel(); transcriptionGate.current.cancel(); capture.current?.stop();
     void audioContext.current?.close();
   }, []);
@@ -149,6 +152,7 @@ export default function Home() {
 
   useEffect(() => {
     const ownerId = quota?.user.userId;
+    retrievalRetries.current.clear();
     if (!ownerId) return;
     let cancelled = false;
     void listBooks(ownerId)
@@ -172,6 +176,7 @@ export default function Home() {
   async function clearReadingHistory() {
     if (!quota || !window.confirm("清空这个账号在本机保存的全部对话？书籍和索引不受影响。")) return;
     interruptReply();
+    retrievalRetries.current.clear();
     await historyWrites.current;
     await clearHistory(quota.user.userId); summaries.current = {}; setContextNote(""); updateExchanges([]); stopAudio();
   }
@@ -272,6 +277,7 @@ export default function Home() {
     if (!ownerId || bookTransitionBlocked) return;
     try {
       setOpeningBookId(bookId);
+      retrievalRetries.current.clear();
       setSampleError("");
       interruptReply(); clearTranscript(); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
       stopAudio();
@@ -326,6 +332,7 @@ export default function Home() {
     try {
       const ownerId = quota?.user.userId;
       if (!ownerId) throw new Error("Your login session is not ready. Please refresh and try again.");
+      retrievalRetries.current.clear();
       stopAudio(); setError(""); setBook(null); setChunks([]); updateExchanges([]); setProgress(3);
       summaries.current = {}; setContextNote("");
       const id = await fingerprintBook(file);
@@ -389,11 +396,11 @@ export default function Home() {
 
   async function ask(rawQuestion: string, revision = "", original?: Exchange, retryId?: string) {
     const cleanQuestion = rawQuestion.trim();
-    if (!cleanQuestion || !chunks.length || openingBookId || !preferencesReady) return;
+    if (!cleanQuestion || !chunks.length || openingBookId || !preferencesReady || !quota?.user.userId || !book) return;
     interruptReply(); cancelIncoming();
     const signal = turnGate.current.next();
     const history = exchangesRef.current.filter(turn => turn.id !== retryId);
-    const owner = quota?.user.userId, bookId = book?.id;
+    const owner = quota.user.userId, bookId = book.id;
     const exchangeId = retryId || crypto.randomUUID();
     pendingReply.current = exchangeId;
     const pending = beginReply(exchangesRef.current, cleanQuestion, exchangeId);
@@ -419,11 +426,17 @@ export default function Home() {
       setContextNote(conversation.mode === "full" ? `本次参考全部 ${conversation.totalTurns} 轮前文` : `本次参考早期摘要、${conversation.turns.length} 轮近期原文及 ${conversation.recalled.length} 段相关历史`);
       setStage("retrieving");
       const query = retrievalQuestion(cleanQuestion, history);
-      const [queryEmbedding] = await embedTexts([query], book?.embeddingModel, "query", signal); signal.throwIfAborted(); setProgress(100);
-      if (chunks.some((chunk) => chunk.embedding.length !== queryEmbedding.length)) {
-        throw new Error("The question vector does not match this book's saved index.");
-      }
-      const retrieved = hybridRetrieve(query, queryEmbedding, chunks, 6) as Chunk[];
+      const retrieved = await retrievalRetries.current.retrieve({
+        ownerId: owner, bookId, model: book.embeddingModel || "text-embedding-3-small", turnId: exchangeId, query,
+      }, chunks, signal, async () => {
+        const [queryEmbedding] = await embedTexts([query], book.embeddingModel, "query", signal);
+        signal.throwIfAborted();
+        if (chunks.some((chunk) => chunk.embedding.length !== queryEmbedding.length)) {
+          throw new Error("The question vector does not match this book's saved index.");
+        }
+        return hybridRetrieve(query, queryEmbedding, chunks, 6) as Chunk[];
+      });
+      signal.throwIfAborted(); setProgress(100);
       setStage("answering");
       const response = await fetch("/api/answer", {
         method: "POST", signal, headers: { "Content-Type": "application/json" },
@@ -649,6 +662,7 @@ export default function Home() {
 
   function resetBook() {
     if (bookTransitionBlocked) return;
+    retrievalRetries.current.clear();
     interruptReply(); clearTranscript(); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
     summaries.current = {}; setContextNote("");
     stopAudio(); setBook(null); setChunks([]); updateExchanges([]);
@@ -657,6 +671,7 @@ export default function Home() {
 
   async function logout() {
     endVoice();
+    retrievalRetries.current.clear();
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.replace("/login");
   }

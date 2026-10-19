@@ -5,6 +5,7 @@ import {readFileSync,existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import ts from "typescript";
 import {pcmWav} from "../lib/voice-turn.ts";
+import {RetrievalRetryCache} from "../lib/retrieval-retry.ts";
 import {env,jar,reset,close,database} from "./fixtures/server-runtime.mjs";
 const root=new URL("../",import.meta.url),host=new URL("./fixtures/server-runtime.mjs",import.meta.url).href;
 const hook=registerHooks({
@@ -271,6 +272,34 @@ test("server-side failures return the reader's allowance; successful answers sti
     assert.equal((await routes.answer.POST(request("answer",{question:"Why?",contexts}))).status,200);
     snapshot=await quota.getQuotaSnapshot(user);assert.equal(snapshot.questions.used,1);
   } finally {if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}
+});
+test("a failed answer can be retried beyond the search limit using its successful retrieval",async()=>{
+  const user=await reader();await login();
+  const saved=Object.fromEntries(["OPENAI_API_KEY","OPENAI_BASE_URL","OPENAI_QA_MODEL"].map(key=>[key,process.env[key]]));
+  Object.assign(process.env,{OPENAI_API_KEY:"synthetic-test-key",OPENAI_BASE_URL:"https://api.openai.com/v1",OPENAI_QA_MODEL:"gpt-5-mini"});
+  let searches=0,failAnswer=true;
+  const cache=new RetrievalRetryCache(),index=[],contexts=[{id:"c1",sectionTitle:"Test",pageStart:1,pageEnd:1,text:"Synthetic evidence"}];
+  const scope={ownerId:user.userId,bookId:"book",model:"text-embedding-3-small",turnId:"failed-turn",query:"Why?"};
+  try {
+    globalThis.fetch=async(url)=>{
+      if(String(url).endsWith("/embeddings")){searches++;return Response.json({data:[{index:0,embedding:Array(1536).fill(.1)}]});}
+      return failAnswer?Response.json({error:{message:"synthetic outage"}},{status:500}):Response.json({output_text:"Supported [S1]."});
+    };
+    const attempt=async()=>{
+      const retrieved=await cache.retrieve(scope,index,new AbortController().signal,async()=>{
+        const result=await routes.embed.POST(request("embed",{purpose:"query",texts:[scope.query]}));
+        assert.equal(result.status,200);await result.json();return contexts;
+      });
+      return routes.answer.POST(request("answer",{question:scope.query,contexts:retrieved}));
+    };
+    for(let i=0;i<45;i++)assert.equal((await attempt()).status,502);
+    assert.equal(searches,1);
+    assert.equal((await quota.getQuotaSnapshot(user)).questions.remaining,20);
+    assert.equal(database.prepare("SELECT query_embedding_count AS n FROM daily_usage WHERE user_id=?").get(user.userId).n,1);
+    failAnswer=false;assert.equal((await attempt()).status,200);
+    assert.equal((await quota.getQuotaSnapshot(user)).questions.remaining,19);
+    assert.equal(searches,1);
+  } finally {for(const [key,value] of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
 });
 test("global reservations are atomic across accounts and never overspend under concurrency",async()=>{
   const outcomes=await Promise.allSettled(Array.from({length:20},(_,i)=>ops.reserveProvider(`account-${i}`,1500000)));
