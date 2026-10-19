@@ -6,7 +6,7 @@
 
 A voice-first PDF reading companion for the Wiz AI Builder Intern take-home assignment. Upload a book, ask through your microphone, and hear an answer with clickable source passages.
 
-Verified hosted release: **Sites v31**, application baseline [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1), checked 19 October 2026. See the [deployment/source mapping](docs/DEPLOYMENT.md). The v28 acceptance screenshots are historical evidence, not the current release identifier.
+Verified hosted release: **Sites v32**, matching GitHub source [`cc28e27`](https://github.com/Fongkai777/voice-book/commit/cc28e2791303225393fb56fa7c845315e34fe5aa), published 19 October 2026. Application behavior remains at [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1); subsequent changes are documentation only. See the [deployment/source mapping](docs/DEPLOYMENT.md). The v28 acceptance screenshots are historical evidence, not the current release identifier.
 
 ## Try it
 
