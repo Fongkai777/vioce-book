@@ -1,0 +1,24 @@
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -7,1 +7,1 @@
+-const fastGlob = require("fast-glob");
++const fastGlob = require("tinyglobby");
+@@ -514,4 +514,4 @@
+-  files = fastGlob.sync(fileGlobs, { cwd: (
++  files = fastGlob.globSync(fileGlobs, { expandDirectories: false, cwd: (
+     /* 🚧-① */
+     path.dirname(importer)
+   ) }).map((file) => relativeify(file));
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -5,1 +5,1 @@
+-import fastGlob from "fast-glob";
++import * as fastGlob from "tinyglobby";
+@@ -512,4 +512,4 @@
+-  files = fastGlob.sync(fileGlobs, { cwd: (
++  files = fastGlob.globSync(fileGlobs, { expandDirectories: false, cwd: (
+     /* 🚧-① */
+     path.dirname(importer)
+   ) }).map((file) => relativeify(file));

@@ -30,8 +30,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
-      - name: Review complete dependency audit and verify local mitigation
-        run: pnpm audit:reviewed
+      - name: Audit all dependencies (no advisory exceptions)
+        run: pnpm audit
       - name: Check release boundaries and secret patterns
         run: pnpm check:release
       - name: Type check

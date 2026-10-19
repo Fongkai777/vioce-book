@@ -31,7 +31,7 @@ For operations: at `/admin`, **Health, budget & recovery** shows database readin
 
 **Encrypted server backup & restore** downloads accounts, quotas, preferences and feedback. **Book management → Backup & restore** downloads the selected book, PDF, vectors and saved conversations without any model call. No automatic jobs or cloud backup storage are enabled. Read [Backup and recovery](docs/BACKUP-RESTORE.md) before replacing server data.
 
-`pnpm audit:reviewed` checks the full dependency tree and verifies the version-locked braces mitigation. Both esbuild advisories are fixed; raw `pnpm audit` still reports one upstream-unpatched development finding, documented in [SECURITY.md](SECURITY.md).
+`pnpm audit` checks the full dependency tree with no advisory exceptions (`pnpm audit:reviewed` is a backwards-compatible alias). Both esbuild advisories are fixed, and the braces dependency chain has been removed by adapting two build-tool consumers to tinyglobby. The full audit reports no known vulnerabilities at the 2026-10-19 review; see [SECURITY.md](SECURITY.md) for compatibility patches and maintenance requirements.
 
 Recommended: Node.js 24 LTS and pnpm 11.25.0. Tests/builds need no API keys. Real model calls require separately configured credentials.
 
