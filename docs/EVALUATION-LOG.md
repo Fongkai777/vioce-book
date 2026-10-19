@@ -69,3 +69,21 @@ Chrome on macOS, deployed v32, fresh upload of the committed Alice PDF (SHA-256 
 Interrupting by voice while an answer was audibly playing through speakers was not detected; speaking before playback started did cancel it and submitted the new question. One reply stayed in "Preparing the spoken reply" for about a minute before that interruption; the cause was not isolated. The built-in desktop browser pane blocks microphone access, and the app showed its permission-denied message correctly.
 
 Root causes found: the retrieval query concatenated the previous question and recalled earlier answers, dragging results back to old topics; the answer language was implicit; all-caps song lines ("CHORUS.") became section labels. Fix: retrieval uses the question alone unless it depends on the previous turn (pronouns, "and/why/what about", very short follow-ups, explicit turn references), the answer prompt states the reply language per turn, and books with explicit chapter headings use only those as sections. Replaying the same conversation offline with keyword ranking only, the follow-up and Bill questions moved from miss to hit and labels became the twelve chapter titles; the Cheshire Cat and ending questions still miss in keyword-only ranking, so the full hybrid result must be re-measured after deployment.
+
+## 2026-10-20 re-run on v33
+
+Same Chrome setup, same seven questions in the same order (so the same conversation history), with the PDF re-indexed by v33 (147 passages; a one-byte trailing comment made it a new book). Labels now show the real chapter titles.
+
+| Question | v32 | v33 |
+| --- | --- | --- |
+| Bottle label | Correct | Correct |
+| Croquet balls and mallets | Correct ("HEARTS." label) | Correct, labelled chapter VIII |
+| Cheshire Cat disappearing | Wrong (head) | **Correct**: only the grin remains, cited pp. 25–26 |
+| Follow-up: what Alice said | Correct | Correct, quotes "a grin without a cat!" |
+| How the story ends | Not answered | **Partly correct**: retrieves pp. 52–53 and calls it a dream, but says there is no explicit waking scene (p. 52 has one) |
+| Teacher's name (unanswerable) | Refusal citing all six passages | Refusal citing two relevant passages |
+| Who is Bill | Correct content in Chinese | **English**, all citations in chapter IV |
+
+Speaking over the playing answer to Q4 did interrupt it this time (text kept, next question processed), so speaker-based interruption is intermittent rather than absent. Turn time was again about 16–18 s from end of speech to playback.
+
+New failure: Q6's speech and the second half of Q7's speech failed with "Too many AI requests are running". Both segments of an answer were requested at once, filling the account's two in-flight slots, so any other running request (such as speech cancelled by the interruption) caused a 429. Fixed afterwards by requesting segments sequentially with a short busy-retry; not yet re-measured live.

@@ -2,6 +2,7 @@
 import { useRef, useState, type RefObject } from "react";
 import { PausableAudio } from "../lib/pausable-audio";
 import { speechSegments, TurnGate } from "../lib/voice-turn";
+import { requestSpeech, sequentialJobs } from "../lib/speech-queue";
 import type { VoiceInputGate } from "../lib/voice-input-gate";
 import type { Stage } from "../lib/reader-stage";
 
@@ -34,19 +35,18 @@ export function useReplyAudio({ voiceInputGate, turnGate, setStage, setVoiceNoti
     const saved = replay.current;
     try {
       const context = audioContext.current || await prepareAudio();
-      const jobs = speechSegments(text).map(async (segment, index) => {
-        try {
-          const response = await fetch("/api/speech", { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: segment }) });
-          if (!response.ok) { const payload = await response.json() as { error?: string }; throw new Error(payload.error || "Speech generation failed"); }
-          const buffer = await context.decodeAudioData(await response.arrayBuffer()); signal.throwIfAborted();
-          saved.buffers[index] = buffer; setReplayAvailable(true);
-          return { buffer };
-        } catch (error) { return { error }; }
+      const post = (segment: string, requestSignal: AbortSignal) => fetch("/api/speech", { method: "POST", signal: requestSignal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: segment }) });
+      // One speech request at a time per reply; the next segment downloads while the previous one plays.
+      const jobs = sequentialJobs(speechSegments(text), async (segment, index) => {
+        const response = await requestSpeech(segment, signal, post);
+        const buffer = await context.decodeAudioData(await response.arrayBuffer()); signal.throwIfAborted();
+        saved.buffers[index] = buffer; setReplayAvailable(true);
+        return buffer;
       });
       for (const job of jobs) {
         const result = await job; signal.throwIfAborted();
-        if (!result.buffer) throw result.error;
-        setStage("speaking"); await playBuffer(result.buffer, context, signal);
+        if (!result.value) throw result.error;
+        setStage("speaking"); await playBuffer(result.value, context, signal);
       }
       signal.throwIfAborted(); playingExchange.current = null; setStage("ready");
     } catch (caught) {

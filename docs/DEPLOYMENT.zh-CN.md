@@ -4,6 +4,8 @@
 
 线上已包含 [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45)：独立检索问题、明确回答语言和章节感知分节。已有书籍保留原段落，本次发布不会自动重新索引。
 
+> **尚未部署：** v33 之后提交的语音分段并发修复（2026-10-20）。下次发布后请在此记录。
+
 ## 当前已核实版本
 
 发布于 2026-10-19 16:36 UTC／**新加坡时间 2026-10-20 00:36**。线上入口：[Voicebook](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site)。

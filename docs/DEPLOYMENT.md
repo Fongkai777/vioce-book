@@ -4,6 +4,8 @@
 
 The deployed application includes [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45): standalone retrieval queries, an explicit answer language and chapter-aware section labels. Existing saved books keep their stored passages; this release does not automatically re-index them.
 
+> **Not yet deployed:** the speech-segment concurrency fix committed after v33 (2026-10-20). Record the next release here.
+
 ## Current verified release
 
 Published 19 October 2026 at 16:36 UTC / **20 October 2026 at 00:36 Singapore time**. The live site is [Voicebook](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site).

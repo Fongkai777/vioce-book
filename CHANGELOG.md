@@ -4,6 +4,11 @@
 
 Entries describe delivered changes, not an unrestricted-production certification. Public Git history is retained. Current hosted provenance is in the [deployment record](docs/DEPLOYMENT.md); dated test evidence is in [evaluation](docs/EVALUATION.md).
 
+## 2026-10-20 — Spoken answers no longer hit the account's concurrency limit
+
+- Speech segments are requested one at a time (the next while the previous plays) instead of all at once, so one reply never fills both of an account's in-flight AI slots; a transient "busy" 429 is retried briefly and cancellation stops retries. Daily and budget limits are never retried.
+- Recorded the v33 live re-run: the topic-change, language and section-label fixes were confirmed; this speech failure was found in the same run.
+
 ## 2026-10-20 — Retrieval and answer-language fixes (from a live voice run)
 
 - Retrieval no longer mixes earlier questions and answers into the search query; only dependent follow-ups borrow the previous question. The full conversation still goes to the answer model.
