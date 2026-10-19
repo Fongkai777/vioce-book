@@ -8,7 +8,7 @@
 4. Add regression tests for fixes and run `pnpm check`. For browser-facing changes, also run the manual matrix in `docs/EVALUATION.md` and state what you actually verified.
 5. Include behavior, tests, data migration impact, known limitations and rollback plan in the review description. Never attach personal book exports, `.env.local`, databases or unredacted logs.
 
-The GitHub CI workflow checks full Git history, TypeScript, offline tests and a production build on pushes/PRs. It is deliberately not a deployment workflow. Runtime production releases go through Sites separately. Required reviews/branch protection must be enabled by the repository owner.
+The GitHub CI workflow installs locked dependencies, audits both production and the full dependency tree without advisory exceptions, checks private-file/secret patterns in the working tree and full Git history, and runs zero-warning lint, TypeScript, offline tests and a production build on pushes/PRs. `pnpm check` includes lint but not the separate `pnpm audit` command. See [lint policy](docs/LINT.md). CI is deliberately not a deployment workflow; Sites releases and their GitHub source mapping are recorded in [deployment](docs/DEPLOYMENT.md). Required reviews/branch protection must be enabled by the repository owner.
 
 Do not update dependency ranges without updating/reviewing `pnpm-lock.yaml`. Do not use a model call to generate test fixtures during CI. Synthetic harness routes under `app/book-qa` or `app/voice-qa` are temporary local tools and must be removed before commit; `check:release` rejects them.
 

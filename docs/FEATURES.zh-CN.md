@@ -1,8 +1,8 @@
 # 功能与实现细节
 
-[Project overview / 项目介绍](../README.zh-CN.md)
+[English](FEATURES.md) · [项目介绍](../README.zh-CN.md)
 
-### 环境变量
+## 环境变量
 
 | 变量 | 默认值 | 用途 |
 | --- | --- | --- |
@@ -20,10 +20,10 @@
 
 `.env.local` 被 Git 忽略。不要把密钥放入 `NEXT_PUBLIC_*`、`public/`、工作流或截图。密码以带随机盐的 PBKDF2 哈希保存，会话使用 HttpOnly Cookie。
 
-### 常用命令
+## 常用命令
 
 ```bash
-pnpm check             # 发布边界、类型、离线测试、生产构建
+pnpm check             # 发布边界、lint、类型、离线测试、生产构建
 pnpm test              # 单元、UI 和 SQLite 路由测试，不调用付费模型
 pnpm typecheck         # TypeScript 检查
 pnpm check:release     # 私人文件和历史凭据模式检查
@@ -51,19 +51,11 @@ AudioWorklet 在本机测量输入音量，约 1.1 秒静音结束一段，保�
 
 书库列表只读轻量元数据，选书后才读文字和索引，预览时才读 PDF。Overview 展示页数、章节、段落、OCR 信息和就绪状态；Content 按页预览 PDF，也支持纯文字版本。Show passages 提供关键词、章节筛选和分页；View in book 可定位引用，包括后续列表页上的段落。只检查内容不会重新索引，也不会改变正在对话的书。
 
-已有 Counseling Copilot 书库的维护导出命令：
-
-```bash
-python3 scripts/export-copilot-library.py "/path/to/Counseling Copilot" "/path/to/voicebook/local-library/copilot.voicebook.json"
-```
-
-导出器只读原 SQLite，复制已处理文字和向量，不读取凭据或调用模型。历史一次性导入 UI 已移除，不能从阅读页上传该包；导出与校验代码保留用于维护。旧索引为 1024 维，新 PDF 为 1536 维，查询必须使用匹配的模型。导入包没有原始 PDF，缺失页码不会猜测。
-
 云端示例仅包含两本允许发布的 AI 创作短读物及其索引。`local-library/`、用户 PDF 和私人索引不进入发布包。选择示例只复制本地副本，不调用模型；`scripts/build-sample-index.mjs` 是需凭据的显式维护步骤，不会在部署或选书时自动执行。
 
 ## 验证结果与当前边界
 
-2026 年 10 月 19 日的验证记录包含 125 项自动化测试、类型检查与构建。测试覆盖检索、存储迁移、权限、注册并发、额度、费用结算、备份恢复、稳定语音消息、空转写与暂停续播；测试数量以当前运行结果为准。
+按 [测试评估](EVALUATION.zh-CN.md) 的日期/提交基线记录自动化测试、lint、类型检查与构建结果。测试覆盖检索、存储迁移、权限、注册并发、额度、费用结算、备份恢复、稳定语音消息、空转写与暂停续播；测试数量以当前运行结果为准。
 
 另外完成了隔离数据库的注册与偏好浏览器验收、真实模型的小样本问答，以及获准的扬声器到真实麦克风合成语音测试。它们不等于正式质量基准、真人打断验收、分布式压测或生产恢复演练。实际失败和限制见[测试与评估](EVALUATION.zh-CN.md)，私人书籍片段和原始日志不公开。
 

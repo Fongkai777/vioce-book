@@ -1,6 +1,6 @@
 # Feature and implementation details
 
-[Project overview / 项目介绍](../README.md)
+[中文](FEATURES.zh-CN.md) · [Project overview](../README.md)
 
 ## Configuration
 
@@ -20,14 +20,7 @@
 
 Secrets stay in `.env.local`, which is ignored by Git. The browser only calls the application's server routes. User passwords are PBKDF2-hashed before they are stored in D1, and sessions use HttpOnly cookies.
 
-## Import an existing local library
-
-Run `python3 scripts/export-copilot-library.py "/path/to/Counseling Copilot" "/path/to/voicebook/local-library/copilot.voicebook.json"`.
-The exporter reads the source SQLite database in read-only mode and copies existing LlamaIndex text nodes and vectors. It does not read credentials or call an API. Original source files remain untouched. The one-time **Import saved library** UI has been removed after migration; the exporter and bundle validator remain available for maintenance, but bundles can no longer be uploaded through the reading page. Existing imported books and indexes are unchanged. Add new PDFs with the **+** button in Local library.
-
-The `local-library/` directory is ignored and is not included in the website's build. Do not place these files in `public/`. Each browser/account imports its own copy; they are not a shared hosted book catalog. Imported books retain their original `text-embedding-v4` / 1024-dimensional vectors; only each question gets a new vector through the configured original provider. New PDFs continue using `text-embedding-3-small`. Missing original PDF page provenance is explicitly displayed rather than guessed. The import contains processed text and vectors, not PDF originals.
-
-## Scope and next steps
+## Reader features
 
 ### Book management
 

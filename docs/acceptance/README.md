@@ -23,6 +23,8 @@ This is a new text-only layout of all 12 story chapters, not a historical facsim
 
 ## Actual results
 
+This section records the original v28 test, not the current deployed code. See the [current deployment/commit mapping](../DEPLOYMENT.md). Later automated regression results do not imply that these acoustic tests were repeated on every release.
+
 Environment: deployed **v28**, code release `05473c1`, documentation baseline `08c48b2`, Codex in-app browser on macOS. Existing live ASR, embedding, answer and TTS providers were used. Input was macOS Samantha synthetic English speech played through speakers into the **real microphone**, not a mocked microphone stream or route-only test.
 
 Upload started at 18:38:20 Singapore time; readiness was observed at 18:38:43. This is a polling-bound observation, not an exact latency benchmark. All 56 pages had embedded text; **this fixture did not exercise OCR**. Questions were observed around 18:45–18:47, with citation/refresh checks at 18:48. [Browser observations](browser-observations.json) use UTC timestamps and contain only this public-book test.
@@ -50,6 +52,6 @@ Additional evidence: [transcription](images/microphone-level.png), [source drawe
 
 ## Release checks and limits
 
-The existing **125 offline tests passed again**, and `tsc --noEmit` passed on 19 October. This submission adds fixtures/docs/media only, not application behavior or a new deployment. See [evaluation](../EVALUATION.md), [architecture](../ARCHITECTURE.md), [AI collaboration](../AI_WORKFLOW.md) and [operations](../OPERATIONS.md).
+Offline tests and TypeScript passed when these acceptance artifacts were recorded on 19 October. That evidence package contained fixtures/docs/media, not a new application deployment. For the dated current regression baseline and authoritative runner/CI results, see [evaluation](../EVALUATION.md); also see [architecture](../ARCHITECTURE.md), [AI collaboration](../AI_WORKFLOW.md) and [operations](../OPERATIONS.md). Historical acoustic observations are not relabelled as tests of newer code.
 
 The assignment values retrieval quality, architecture, disciplined AI collaboration and polished UX more than feature count. Remaining priorities are reducing irrelevant evidence/citations, human/device acoustic evaluation and the larger gold-page benchmark. Browser storage and operational quotas still limit very large PDFs; the assignment's lack of a size limit does not imply unlimited capacity.

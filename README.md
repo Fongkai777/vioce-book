@@ -1,10 +1,12 @@
 # Voicebook
 
-[中文](README.zh-CN.md) · [Live demo](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site) · [User guide / 用户手册](docs/USER-MANUAL.zh-CN.md)
+[中文](README.zh-CN.md) · [Live demo](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site) · [User guide](docs/USER-MANUAL.md)
 
 [![CI](https://github.com/Fongkai777/voice-book/actions/workflows/ci.yml/badge.svg)](https://github.com/Fongkai777/voice-book/actions/workflows/ci.yml)
 
 A voice-first PDF reading companion for the Wiz AI Builder Intern take-home assignment. Upload a book, ask through your microphone, and hear an answer with clickable source passages.
+
+Verified hosted release: **Sites v31**, application baseline [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1), checked 19 October 2026. See the [deployment/source mapping](docs/DEPLOYMENT.md). The v28 acceptance screenshots are historical evidence, not the current release identifier.
 
 ## Try it
 
@@ -35,7 +37,7 @@ Open the printed URL. Microphones require localhost or HTTPS. Bootstrap credenti
 Before first deployment, replace the example `ADMIN_USERNAME=admin` with an unpublished name and use a long random password. Changing that variable later is **not** an account rename and can create another bootstrap administrator. See [login protections](SECURITY.md) and [lint policy](docs/LINT.md).
 
 ```bash
-pnpm check           # release boundaries, types, offline tests, production build
+pnpm check           # release boundaries, lint, types, offline tests, production build
 pnpm audit           # full dependency audit, no advisory exceptions
 ```
 
@@ -77,6 +79,7 @@ See [security](SECURITY.md), [evaluation](docs/EVALUATION.md) and [production re
 
 | Topic | English | 中文 |
 | --- | --- | --- |
+| User guide | [Five-minute guide](docs/USER-MANUAL.md) | [用户手册](docs/USER-MANUAL.zh-CN.md) |
 | Features, voice lifecycle, configuration and references | [Details](docs/FEATURES.md) | [详细说明](docs/FEATURES.zh-CN.md) |
 | Architecture | [Architecture](docs/ARCHITECTURE.md) | [架构](docs/ARCHITECTURE.zh-CN.md) |
 | Testing and acceptance | [Evaluation](docs/EVALUATION.md) | [评估](docs/EVALUATION.zh-CN.md) |
@@ -84,4 +87,6 @@ See [security](SECURITY.md), [evaluation](docs/EVALUATION.md) and [production re
 | Operations and recovery | [Operations](docs/OPERATIONS.md) / [Backup](docs/BACKUP-RESTORE.md) | [运维](docs/OPERATIONS.zh-CN.md) / [备份](docs/BACKUP-RESTORE.zh-CN.md) |
 | Pricing and security | [Pricing](docs/PRICING.md) / [Security](SECURITY.md) | [费用](docs/PRICING.zh-CN.md) / [安全](SECURITY.zh-CN.md) |
 | Development | [Contributing](CONTRIBUTING.md) / [AI workflow](docs/AI_WORKFLOW.md) | [贡献](CONTRIBUTING.zh-CN.md) / [AI 工作流](docs/AI_WORKFLOW.zh-CN.md) |
+| Lint policy | [Lint](docs/LINT.md) | [静态检查](docs/LINT.zh-CN.md) |
+| Releases and changes | [Deployment](docs/DEPLOYMENT.md) / [Changelog](CHANGELOG.md) | [部署记录](docs/DEPLOYMENT.zh-CN.md) / [更新日志](CHANGELOG.zh-CN.md) |
 

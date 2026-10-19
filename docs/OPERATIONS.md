@@ -10,14 +10,6 @@ Use Node.js 24 and pnpm 11.25.0 for reproducible local checks. `pnpm install --f
 
 ## First local launch
 
-### Authentication deployment checks
-
-Choose an unpublished `ADMIN_USERNAME` before the first bootstrap, not the sample `admin`, and a long random password. Changing this variable later does not rename an existing account and may create another administrator. Existing accounts are deliberately left unchanged by this patch.
-
-After publishing, request `/api/health` and inspect Worker logs for `auth_client_ip_status` with `status: cloudflare` and `usable: true`. No visitor IP is logged. This observes that request path, not a guarantee for every proxy/client. Missing/invalid headers or Cloudflare's shared Worker address produce a warning and public login/registration return 503; do not restore a global `local` bucket or trust client-supplied forwarded headers to hide the problem. Repair the platform's trusted IP forwarding or roll back the release. See [Cloudflare's header semantics](https://developers.cloudflare.com/fundamentals/reference/http-headers/). Health still reports database readiness; the IP diagnostic is a separate operator check.
-
-Administrators retain pair/IP limits but not the ordinary account's cross-IP lockout. Password confirmations in an authenticated admin session have their own limit. This protects availability, not distributed password guessing; MFA/edge protection remain production gates. See [security](../SECURITY.md).
-
 1. Follow README setup and fill the blank values in `.env.local`. Never commit that file.
 2. Run `pnpm db:migrate:local`. It applies the committed SQL migrations in order to `.wrangler/state` using `wrangler.local.jsonc`. Repeat runs skip recorded migrations. It never passes `--remote`.
 3. Run `pnpm dev`; log in with the bootstrap administrator and create a regular test account.
@@ -34,6 +26,14 @@ The local configuration contains a placeholder D1 ID shared with the Vite emulat
 5. Wait for a terminal deployment result. Verify login, regular-user quota, sample selection, citation navigation and administrator access control. `/api/health` verifies API configuration, D1 reachability and required tables without making a paid provider request. It returns no-store 503 if readiness fails; it does not prove provider availability.
 6. Record actual smoke-test results. CI uses no production credentials and intentionally cannot deploy.
 
+### Authentication deployment checks
+
+Choose an unpublished `ADMIN_USERNAME` before the first bootstrap, not the sample `admin`, and a long random password. Changing this variable later does not rename an existing account and may create another administrator.
+
+After publishing, request `/api/health` and inspect Worker logs for `auth_client_ip_status` with `status: cloudflare` and `usable: true`. No visitor IP is logged. This observes that request path, not a guarantee for every proxy/client. Missing/invalid headers or Cloudflare's shared Worker address produce a warning and public login/registration return 503; do not restore a global `local` bucket or trust client-supplied forwarded headers to hide the problem. Repair the platform's trusted IP forwarding or roll back the release. See [Cloudflare's header semantics](https://developers.cloudflare.com/fundamentals/reference/http-headers/). Health still reports database readiness; the IP diagnostic is a separate operator check.
+
+Administrators retain pair/IP limits but not the ordinary account's cross-IP lockout. Password confirmations in an authenticated admin session have their own limit. This protects availability, not distributed password guessing; MFA/edge protection remain production gates. See [security](../SECURITY.md) and the [verified deployment record](DEPLOYMENT.md).
+
 ## Rollback and data recovery
 
 - Roll back application code by redeploying a previously saved, known-good Sites version. Do not force-push repository history.
@@ -45,7 +45,8 @@ The local configuration contains a placeholder D1 ID shared with the Vite emulat
 ## Credentials and accounts
 
 - A bootstrap administrator is inserted only if its username does not exist. Changing `ADMIN_PASSWORD` in hosting settings does **not** rotate an existing database password.
-- There is no self-service password reset or MFA. Account recovery/rotation requires a reviewed maintenance operation that updates the password hash and revokes existing sessions; never write a plaintext password to D1. Do not send administrator credentials to reviewers.
+- In **Admin → User allowances**, administrators can **Disable / Enable** regular accounts and **Reset password**, after confirming their own administrator password. These operations revoke the target's sessions and write an audit event transactionally; they preserve books, history, preferences and usage. Resetting a disabled account's password does not enable it. Share new credentials privately after verifying the reader's identity.
+- The panel cannot modify the acting administrator or another administrator. Administrator recovery still requires a separately reviewed maintenance operation that updates the hash and revokes sessions; changing bootstrap secrets is not recovery. There is no email/self-service reset, forced next-login password change or MFA. Never store plaintext passwords in D1 or give reviewers administrator credentials.
 - Revoke provider credentials immediately after suspected exposure; update hosting secrets, verify a controlled request and review provider billing. Removing a secret from the latest commit does not remove it from history.
 - Protect `main` with required CI and reviews through GitHub settings. The workflow does not automatically change repository permissions or branch protection.
 
@@ -59,7 +60,9 @@ Policy v2 uses model-specific token rates for known official OpenAI endpoints, r
 
 AI/login body limits are enforced while reading, before parsing, including requests without a trustworthy Content-Length. Endpoint ceilings: answer 450 kB; embeddings 3.2 MB; OCR 8.01 MB; multipart audio 6.5 MB; speech 40 kB; summary 32 kB; login 4 KiB. Provider response bodies are bounded to 16 MB. These are not an edge WAF or a comprehensive distributed denial-of-service defense.
 
-Daily limits use the Singapore calendar day. Defaults: 20 questions, 600 voice seconds; per-user overrides apply to those meters. Indexing: 750,000 character-equivalent units (OCR reserves 10,000 per page). Speech: 50,000 characters. Query embeddings: twice the question limit. History maintenance: 500,000 characters, with a 1,000-unit minimum per request. Accepted work is charged before the provider call; failure/interruption does not automatically refund it.
+Daily limits use the Singapore calendar day. Defaults: 20 questions, 600 voice seconds; per-user overrides apply to those meters. Indexing: 750,000 character-equivalent units (OCR reserves 10,000 per page). Speech: 50,000 characters. Query embeddings: twice the question limit. History maintenance: 500,000 characters, with a 1,000-unit minimum per request.
+
+Personal allowance is charged before a provider call and automatically returned to the original usage day when that request fails for server reasons (budget/pause/concurrency rejection, provider failure or invalid output). A caller-aborted request keeps its charge. Refunds apply per endpoint, not to an entire conversation: a successful transcription/search remains charged if the later answer fails. Successful empty transcription can also consume voice allowance. Refund writes can fail during a database outage; inspect `quota_refund_failed` and reconcile rather than promise unconditional delivery. Global money reserves and actual supplier charges remain separate; failure/cancellation does not release the global reserve. See [security](../SECURITY.md) and [pricing](PRICING.md).
 
 ## Gates before unrestricted production access
 

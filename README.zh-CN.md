@@ -6,6 +6,8 @@
 
 面向 Wiz AI Builder Intern 作业的语音读书助手：上传 PDF，用麦克风提问，获得带原文引用的回答并自动播放。重点是长文档检索、可核对的依据和连续对话，而不是简单给聊天模型附上 PDF。
 
+已核实线上版本：**Sites v31**，应用代码基线为 [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1)，核实日期 2026-10-19。完整关系见[部署/提交记录](docs/DEPLOYMENT.zh-CN.md)。v28 验收截图是历史证据，不代表当前部署版本。
+
 ## 快速体验
 
 1. 打开网站并注册普通账号；全站每天最多自助注册两个账号，按新加坡时间重置。名额用完可联系管理员开评审账号。
@@ -32,7 +34,7 @@ pnpm dev
 
 打开终端输出的网址。麦克风要求 localhost 或 HTTPS。初始化密码只在管理员账号不存在时生效；改环境变量不会重置已有密码。密钥不得进入公开文件或 NEXT_PUBLIC_* 变量。
 
-首次部署前，把示例 `ADMIN_USERNAME=admin` 改为不公开的名字，并使用长随机密码。部署后修改该变量**不是重命名账号**，可能另外创建初始化管理员。详见[登录防护](SECURITY.zh-CN.md)与 [lint 规则说明](docs/LINT.md)。
+首次部署前，把示例 `ADMIN_USERNAME=admin` 改为不公开的名字，并使用长随机密码。部署后修改该变量**不是重命名账号**，可能另外创建初始化管理员。详见[登录防护](SECURITY.zh-CN.md)与 [lint 规则说明](docs/LINT.zh-CN.md)。
 
 ```bash
 pnpm check           # 发布边界、类型、lint、离线测试、生产构建
@@ -77,3 +79,4 @@ PDF → 浏览器文字提取 / 扫描页 OCR → 分段与向量 → 账号本�
 - [部署运维](docs/OPERATIONS.zh-CN.md) · [备份恢复](docs/BACKUP-RESTORE.zh-CN.md)
 - [费用计算](docs/PRICING.zh-CN.md) · [安全](SECURITY.zh-CN.md)
 - [贡献指南](CONTRIBUTING.zh-CN.md) · [AI 辅助开发](docs/AI_WORKFLOW.zh-CN.md)
+- [静态检查规则](docs/LINT.zh-CN.md) · [更新日志](CHANGELOG.zh-CN.md) · [部署记录](docs/DEPLOYMENT.zh-CN.md)
