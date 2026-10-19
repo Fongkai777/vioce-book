@@ -21,9 +21,17 @@ Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder In
 - Editable transcripts, suggested questions, automatic spoken replies and interruption controls.
 - Per-user daily question and voice allowances backed by D1.
 - An administrator dashboard for reviewing usage and adjusting individual limits.
+- A global US$5/day **reserved estimate** budget, emergency pause, bounded AI requests and atomic concurrency gates; separate from provider billing.
+- Administrator health/error/latency metrics and manual encrypted server backups; account-scoped book/PDF/index/chat backup and restore in Book management.
 - Offline unit/UI and SQLite-backed route tests for retrieval, storage, history, voice, authentication, quotas and account isolation.
 
 ## Run locally
+
+For operations: at `/admin`, **Health, budget & recovery** shows database readiness, daily reserved budget, login/AI request metrics and warnings. Adjust the US$5/day global limit or pause new AI calls. Set a separate provider-side spending cap; the app's estimate is not a provider invoice.
+
+**Encrypted server backup & restore** downloads accounts, quotas, preferences and feedback. **Book management → Backup & restore** downloads the selected book, PDF, vectors and saved conversations without any model call. No automatic jobs or cloud backup storage are enabled. Read [Backup and recovery](docs/BACKUP-RESTORE.md) before replacing server data.
+
+`pnpm audit:reviewed` checks the full dependency tree and verifies the version-locked braces mitigation. Both esbuild advisories are fixed; raw `pnpm audit` still reports one upstream-unpatched development finding, documented in [SECURITY.md](SECURITY.md).
 
 Recommended: Node.js 24 LTS and pnpm 11.25.0. Tests/builds need no API keys. Real model calls require separately configured credentials.
 

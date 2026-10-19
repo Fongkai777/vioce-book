@@ -2,7 +2,7 @@ import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
 
-export async function POST(request: Request) {
+export const POST = aiRoute("embed", async (request: Request) => {
   try {
     assertSameOrigin(request);
     const body = (await request.json()) as { texts?: unknown; model?: unknown; purpose?: unknown };
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     } else {
       await consumeQuota(user, "embedding", texts.reduce((total, text) => total + text.length, 0));
     }
-    const upstream = await fetch(`${baseUrl}/embeddings`, {
+    const upstream = await providerFetch("embed", user.userId, `${baseUrl}/embeddings`, {
       method: "POST",
       headers: { ...authHeaders(apiKey), "Content-Type": "application/json" },
       body: JSON.stringify({ model, input: texts, encoding_format: "float", ...(legacy ? { dimensions: 1024 } : {}) }),
@@ -55,4 +55,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiErrorResponse(error);
   }
-}
+});
+import { aiRoute, providerFetch } from "@/lib/operations";

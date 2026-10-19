@@ -1,6 +1,7 @@
 "use client";
 
 import FeedbackList from "./feedback-list";
+import OperationsPanel from "./operations-panel";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check, LoaderCircle, RefreshCw, ShieldCheck, UserPlus } from "lucide-react";
 
@@ -103,6 +104,7 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
       <div className="admin-identity"><ShieldCheck size={17} /><span>Administrator</span><small>{adminUsername}</small></div>
     </header>
     <section className="admin-content">
+      <OperationsPanel />
       <div className="admin-title-row">
         <div><p className="eyebrow">Usage control · {date || "today"}</p><h1>User allowances</h1><p>Create login accounts for reviewers, then adjust their daily limits at any time.</p></div>
         <button className="refresh-button" onClick={() => void loadUsers()} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /> Refresh</button>

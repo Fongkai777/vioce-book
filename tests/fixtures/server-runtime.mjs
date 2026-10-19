@@ -12,7 +12,11 @@ class Statement {
 }
 export const env={ADMIN_USERNAME:"admin",ADMIN_PASSWORD:"synthetic-admin-password",DB:{
   prepare(sql){return new Statement(sql);},
-  async batch(statements){database.exec("BEGIN");try{const results=[];for(const statement of statements)results.push(await statement.run());database.exec("COMMIT");return results;}catch(error){database.exec("ROLLBACK");throw error;}}
+  async batch(statements){database.exec("BEGIN");try{const results=[];for(const statement of statements){
+    const prepared=database.prepare(statement.sql);
+    if(prepared.columns().length){results.push({success:true,results:prepared.all(...statement.args),meta:{changes:0}});}
+    else {const result=prepared.run(...statement.args);results.push({success:true,results:[],meta:{changes:Number(result.changes)}});}
+  }database.exec("COMMIT");return results;}catch(error){database.exec("ROLLBACK");throw error;}}
 }};
 export const jar=new Map();
 export async function cookies(){return {get:name=>jar.get(name),set:(name,value,options)=>jar.set(name,{value,options})};}

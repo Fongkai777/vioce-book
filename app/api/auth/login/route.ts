@@ -2,7 +2,7 @@ import { assertSameOrigin } from "@/lib/request-security";
 import { authenticate, clearLoginRateLimit, enforceLoginRateLimit, setSessionCookie } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/errors";
 
-export async function POST(request: Request) {
+export const POST = monitoredRoute("auth/login", async (request: Request) => {
   try {
     assertSameOrigin(request);
     const body = (await request.json()) as { username?: unknown; password?: unknown };
@@ -20,4 +20,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiErrorResponse(error);
   }
-}
+}, 4096, false);
+import { monitoredRoute } from "@/lib/operations";

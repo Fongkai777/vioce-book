@@ -4,7 +4,7 @@ import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from
 import { ApiError } from "@/lib/errors";
 import { bytes, SUMMARY_BATCH, SUMMARY_OUTPUT } from "@/lib/conversation-context";
 
-export async function POST(request: Request) {
+export const POST = aiRoute("history/summary", async (request: Request) => {
   try {
     assertSameOrigin(request);
     const user = await requireApiUser();
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     // A separate bounded maintenance allowance; never consumes a question.
     await consumeQuota(user, "historySummary", Math.max(1000, body.text.length));
     const config = getOpenAIConfig();
-    const response = await fetch(`${config.baseUrl}/responses`, {
+    const response = await providerFetch("history/summary", user.userId, `${config.baseUrl}/responses`, {
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]),
       method: "POST", headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
       body: JSON.stringify({ model: config.qaModel, store: false,
@@ -29,4 +29,5 @@ export async function POST(request: Request) {
     if (!summary || bytes(summary) > SUMMARY_OUTPUT || payload.status === "incomplete") throw new ApiError("摘要未完成，请重试；原始聊天仍然保留。", 502);
     return Response.json({ summary }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return apiErrorResponse(error instanceof SyntaxError ? new ApiError("Invalid JSON", 400) : error); }
-}
+});
+import { aiRoute, providerFetch } from "@/lib/operations";

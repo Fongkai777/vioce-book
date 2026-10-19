@@ -1,5 +1,38 @@
 import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export const operationsSettings = sqliteTable("operations_settings", {
+  id: integer("id").primaryKey(),
+  dailyBudgetMicros: integer("daily_budget_micros").notNull().default(5_000_000),
+  enabled: integer("enabled").notNull().default(1),
+  maxConcurrent: integer("max_concurrent").notNull().default(4),
+  updatedAt: text("updated_at").notNull(),
+});
+export const operationsUsage = sqliteTable("operations_usage", {
+  date: text("date").primaryKey(),
+  reservedMicros: integer("reserved_micros").notNull().default(0),
+  requests: integer("requests").notNull().default(0),
+});
+export const operationsLeases = sqliteTable("operations_leases", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
+export const operationsMetrics = sqliteTable("operations_metrics", {
+  date: text("date").notNull(),
+  route: text("route").notNull(),
+  status: integer("status").notNull(),
+  count: integer("count").notNull().default(0),
+  totalMs: integer("total_ms").notNull().default(0),
+  maxMs: integer("max_ms").notNull().default(0),
+  lastAt: text("last_at").notNull(),
+}, table => [primaryKey({ columns: [table.date, table.route, table.status] })]);
+export const operationsAudit = sqliteTable("operations_audit", {
+  id: text("id").primaryKey(),
+  actor: text("actor").notNull(),
+  action: text("action").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const readerPreferences = sqliteTable("reader_preferences", {
   userId: text("user_id").primaryKey(),
   settings: text("settings").notNull(),

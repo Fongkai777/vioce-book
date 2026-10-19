@@ -2,7 +2,7 @@
 
 ## Automated release checks
 
-`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The initial GitHub release has **60 tests**, including a synthetic two-page PDF extraction regression; the current runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits production dependencies, installs the locked dependencies and receives no production/model secrets.
+`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The operations release has **75 tests**, including a synthetic two-page PDF extraction regression; the current runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits production and reviewed development dependencies, installs the locked dependencies and receives no production/model secrets.
 
 | Area | Automated evidence |
 | --- | --- |
@@ -14,8 +14,11 @@
 | Server | Actual auth/quota/route modules using in-memory SQLite and all committed D1 SQL migrations; host cookie/env adapters only are replaced |
 | Server security | Salted hashes, hashed/expired/revoked sessions, login throttle, concurrent bootstrap, regular-user admin denial, cross-origin mutation rejection, authentication gates, quota concurrency/bounds and error sanitization |
 | Account data | Preferences/feedback cannot target a submitted foreign user ID; samples are authenticated/allowlisted and cost no quota to open |
+| Operations | Concurrent cross-account global budget, per-user/global leases, pause, expiry/day rollover, no refunds, admin-only settings, bounded request bodies and readiness failure |
+| Recovery | Authenticated encryption, wrong passphrase/tampering rejection, server snapshot/restore, role/origin/reauthentication guards, transaction rollback, session revocation and spend preservation; browser PDF/vector/history roundtrip and cross-account rejection |
+| Dependency mitigation | Real ESLint/Vinext dependency copies reject deeply nested/unbalanced strings, deep direct ASTs and cycles while ordinary expansion still works |
 
-The server harness throws on any external `fetch`. Its database is `:memory:` and does not access `.wrangler` or production. SQLite validates SQL and constraint behavior, but it does not reproduce Cloudflare network scheduling, Worker resource limits or D1 availability. The quota test issues overlapping calls and verifies the conditional UPDATE never exceeds its limit; it is not a distributed load test.
+The server harness throws on external `fetch` by default; the provider-wrapper regression replaces it with synthetic responses/errors without networking. Its database is `:memory:` and does not access `.wrangler` or production. SQLite validates SQL and constraint behavior, but it does not reproduce Cloudflare network scheduling, Worker resource limits or D1 availability. Quota/budget tests issue overlapping calls and verify atomic updates never exceed limits; they are not distributed load tests. Recovery tests never replace real production data.
 
 ## Local browser harnesses
 
@@ -24,6 +27,8 @@ The server harness throws on any external `fetch`. Its database is `:memory:` an
 The latest book-management browser check covered default Overview, collapsed technical details, text fallback, passage search, citation navigation to list page 3, keyboard tab switching and incomplete-index warnings. Earlier synthetic voice checks covered draft preservation after empty recognition, editing, playback and cancellation. These are recorded manual observations, not unattended browser tests in CI.
 
 ## Real-device / release acceptance matrix
+
+Operations validation on 2026-10-19 additionally used the built Worker in local Wrangler with a new temporary D1 directory and synthetic credentials: all seven migrations applied; admin login and readiness succeeded; US$5 default displayed; encrypted export, wrong-passphrase rejection, restore, session revocation, recovered-account login and explicit resume passed. The responsive administrator panel was inspected in the browser. `scripts/check-operations.mjs` reproduces the destructive **test-database-only** drill, requiring `VOICEBOOK_QA_DISPOSABLE=1` and an HTTP loopback target; it must never be pointed at user data. No production records or real model calls were involved.
 
 Record browser/OS, fixture, commit, observed outcome and evidence for each check; do not mark a case passed without running it.
 

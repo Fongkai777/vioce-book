@@ -11,14 +11,17 @@ All paths are same-origin. Private endpoints derive identity from the HttpOnly `
 | `/api/preferences` | GET / PUT, signed in | Normalized `tone`, `length`, `guidance`, `rememberHistory`; stored in D1 under current account |
 | `/api/feedback` | POST, signed in | `exchangeId`, `bookName`, `question`, `answer`, `rating`, `tags`, `comment`; sends that answer's content to D1 |
 | `/api/admin/feedback` | GET, admin | Review explicit feedback; not automatic access to browser chat history |
+| `/api/admin/operations` | GET / PATCH, admin | Read metrics/budget/warnings; set `dailyBudgetUsd` (0–100), `maxConcurrent` (1–8), `enabled` (boolean). Changes are audited |
+| `/api/admin/backup` | POST, admin + reauthentication | `passphrase` (12–256 characters), current `password`; returns encrypted versioned application snapshot, never session tokens or API keys |
+| `/api/admin/backup` | PUT, admin + reauthentication | `backup`, `passphrase`, current `password`, `confirmation: "RESTORE SERVER DATA"`; requires paused/drained AI, transactionally replaces server data, revokes sessions |
 | `/api/samples` | GET, signed in | Lightweight allowlisted catalog; `?id=...` returns one prebuilt sample. No mutation API |
 | `/api/embed` | POST, signed in | `texts` (1–64), `purpose` (`index` / `query`), supported `model`; legacy model allows queries only |
 | `/api/ocr` | POST, signed in | JPEG/PNG base64 data URL `image` (up to 8,000,000 characters), `pageNumber`; returns extracted `text` |
-| `/api/transcribe` | POST, signed in | Multipart `audio` (up to 24 MiB), declared `durationSeconds` (1–60); returns `text` and quota |
+| `/api/transcribe` | POST, signed in | Multipart `audio` (up to 6 MiB; entire body <=6.5 MB), declared `durationSeconds` (1–60); returns `text` and quota |
 | `/api/answer` | POST, signed in | `question` (up to 2,000 characters), retrieved `contexts`, optional conversation/revision; returns answer/citations and quota |
 | `/api/history/summary` | POST, signed in | Bounded historical `text`; separate maintenance allowance, no question consumed |
 | `/api/speech` | POST, signed in | `text` (at most first 5,000 characters processed); returns `audio/mpeg` |
-| `/api/health` | GET, public | Configuration liveness only; no model request or database readiness probe |
+| `/api/health` | GET, public | Checks provider configuration and D1/table readiness; no paid provider request; no-store 200 or generic 503 |
 
 Errors are JSON `{ "error": "public message" }`. Authentication is 401, missing admin permission/cross-origin is 403, invalid fields are 400, some oversized requests are 413, exhausted application quota is 429. Upstream failures map to 502/503 without echoing provider bodies. Unknown exceptions return generic 500; malformed JSON returns generic 400. Do not depend on the precise wording of errors.
 

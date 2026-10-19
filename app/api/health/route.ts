@@ -1,10 +1,19 @@
 import { getOpenAIConfig } from "@/lib/openai";
+import { env } from "cloudflare:workers";
 
 export async function GET() {
   try {
     const config = getOpenAIConfig();
+    if (!env.DB) throw new Error("Database is unavailable");
+    // Readiness covers real D1 access and required schema, not a paid provider probe.
+    await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM operations_settings),
+      (SELECT COUNT(*) FROM operations_usage), (SELECT COUNT(*) FROM operations_leases),
+      (SELECT COUNT(*) FROM operations_metrics), (SELECT COUNT(*) FROM operations_audit),
+      (SELECT COUNT(*) FROM app_users), (SELECT COUNT(*) FROM daily_usage),
+      (SELECT COUNT(*) FROM reader_preferences), (SELECT COUNT(*) FROM answer_feedback),
+      (SELECT COUNT(*) FROM auth_sessions), (SELECT COUNT(*) FROM quota_overrides)`).first();
     return Response.json({
-      ok: true,
+      ok: true, database: "ready", provider: "configured-not-probed",
       models: {
         answer: config.qaModel,
         ocr: config.ocrModel,
@@ -12,8 +21,8 @@ export async function GET() {
         speech: config.ttsModel,
         embedding: "text-embedding-3-small",
       },
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch {
-    return Response.json({ ok: false, error: "Server API key is not configured" }, { status: 503 });
+    return Response.json({ ok: false, error: "Service is not ready" }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

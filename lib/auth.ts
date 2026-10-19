@@ -59,6 +59,11 @@ export async function clearLoginRateLimit(attemptKey: string) {
   await db().prepare("DELETE FROM auth_login_attempts WHERE attempt_key = ?").bind(attemptKey).run();
 }
 
+export async function verifyCurrentPassword(userId: string, password: string) {
+  const row = await db().prepare("SELECT password_hash AS hash FROM app_users WHERE user_id=? AND active=1").bind(userId).first<{hash: string}>();
+  return Boolean(row?.hash && await verifyPassword(password, row.hash));
+}
+
 export async function hashPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);

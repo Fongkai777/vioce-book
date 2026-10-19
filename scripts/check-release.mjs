@@ -8,6 +8,7 @@ const patterns=[/-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----/,/\bsk-(?:pro
 const failures=new Set();
 const scan=(name,body)=>{if(patterns.some(re=>re.test(body)))failures.add(`${name}: possible secret (value hidden)`);};
 for(const name of names){
+  if(name.endsWith(".backup.json") || name.startsWith("backups/"))failures.add(`${name}: backup must not be published`);
   if(forbidden.test(name))failures.add(`${name}: private/runtime file must not be published`);
   if(existsSync(name))scan(name,readFileSync(name,"utf8"));
 }

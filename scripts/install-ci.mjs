@@ -5,6 +5,14 @@ import { projectRoot } from "./sites-env.mjs";
 import { readExecutionProfile } from "./execution-profile.mjs";
 import { runNpmInstall } from "./npm-install.mjs";
 
+// Preserve pnpm's patched dependencies and frozen lockfile. The original
+// starter npm installer cannot reproduce this project's pnpm-only lockfile.
+if (process.env.npm_execpath?.includes("pnpm")) {
+  const result = spawnSync(process.execPath, [process.env.npm_execpath, "install", "--frozen-lockfile"], { stdio: "inherit", env: { ...process.env, CI: "true" } });
+  if (result.error) throw result.error;
+  process.exit(result.status ?? 1);
+}
+
 if (!process.env.npm_execpath) {
   throw new Error("Run this installer with npm run install:ci.");
 }

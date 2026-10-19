@@ -8,7 +8,7 @@ import { ApiError } from "@/lib/errors";
 
 type Context = { id: string; sectionTitle: string; pageStart: number; pageEnd: number; text: string };
 
-export async function POST(request: Request) {
+export const POST = aiRoute("answer", async (request: Request) => {
   try {
     assertSameOrigin(request);
     const user = await requireApiUser();
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       return `[S${index + 1}] ${context.sectionTitle.slice(0, 200)} (${pages})\n${context.text.slice(0, 4500)}`;
     }).join("\n\n");
     const config = getOpenAIConfig();
-    const upstream = await fetch(`${config.baseUrl}/responses`, {
+    const upstream = await providerFetch("answer", user.userId, `${config.baseUrl}/responses`, {
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]),
       method: "POST",
       headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
@@ -70,4 +70,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiErrorResponse(error);
   }
-}
+});
+import { aiRoute, providerFetch } from "@/lib/operations";

@@ -2,7 +2,7 @@ import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
 import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
 
-export async function POST(request: Request) {
+export const POST = aiRoute("speech", async (request: Request) => {
   try {
     assertSameOrigin(request);
     const body = (await request.json()) as { text?: unknown };
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const user = await requireApiUser();
     await consumeQuota(user, "speech", text.length);
     const config = getOpenAIConfig();
-    const upstream = await fetch(`${config.baseUrl}/audio/speech`, {
+    const upstream = await providerFetch("speech", user.userId, `${config.baseUrl}/audio/speech`, {
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(90_000)]),
       method: "POST",
       headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
@@ -30,4 +30,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiErrorResponse(error);
   }
-}
+});
+import { aiRoute, providerFetch } from "@/lib/operations";

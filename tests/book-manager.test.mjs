@@ -6,7 +6,7 @@ import ts from "typescript";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 const hook = registerHooks({ load(url, context, nextLoad) {
-  if (!/\/app\/(book-manager|pdf-preview)\.tsx$/.test(url)) return nextLoad(url, context);
+  if (!/\/app\/(book-manager|pdf-preview|book-backup-controls)\.tsx$/.test(url)) return nextLoad(url, context);
   return {format:"module",shortCircuit:true,source:ts.transpileModule(readFileSync(new URL(url),"utf8"),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText};
 }});
 const {BookInspector} = await import("../app/book-manager.tsx");

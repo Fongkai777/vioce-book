@@ -19,7 +19,7 @@ function result<T>(request: IDBRequest<T>) {
 function done(tx: IDBTransaction) {
   return new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = tx.onerror = () => reject(tx.error || new Error("对话保存失败")); });
 }
-async function update(userId: string, bookId: string, turns: Turn[], summaries: SummaryCache = {}) {
+async function update(userId: string, bookId: string, turns: Turn[], summaries: SummaryCache = {}, insertOnly = false) {
   const db = await openHistory();
   try {
     const tx = db.transaction("conversations", "readwrite"), completion = done(tx), store = tx.objectStore("conversations");
@@ -29,8 +29,8 @@ async function update(userId: string, bookId: string, turns: Turn[], summaries: 
       const old = request.result as RecordValue | undefined;
       // Merge atomically so a stale tab cannot erase another tab's messages.
       const merged = new Map((old?.turns || []).map(turn => [turn.id, turn]));
-      for (const turn of turns) merged.set(turn.id, turn);
-      store.put({ key, userId, turns: [...merged.values()], summaries: { ...old?.summaries, ...summaries } });
+      for (const turn of turns) if (!insertOnly || !merged.has(turn.id)) merged.set(turn.id, turn);
+      store.put({ key, userId, turns: [...merged.values()], summaries: insertOnly ? { ...summaries, ...old?.summaries } : { ...old?.summaries, ...summaries } });
     };
     await completion;
   } finally { db.close(); }
@@ -57,6 +57,10 @@ export async function loadSummaries(userId: string, bookId: string) { return (aw
 export async function saveHistory(userId: string, bookId: string, turns: Turn[], summaries: SummaryCache = {}) {
   await migrate(userId, bookId);
   await update(userId, bookId, turns, summaries);
+}
+export async function restoreHistory(userId: string, bookId: string, turns: Turn[], summaries: SummaryCache = {}) {
+  await migrate(userId, bookId);
+  await update(userId, bookId, turns, summaries, true);
 }
 export async function clearHistory(userId: string, bookId?: string) {
   const db = await openHistory();

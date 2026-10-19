@@ -5,7 +5,7 @@ import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
 const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000;
 const OCR_INDEXING_UNITS_PER_PAGE = 10_000;
 
-export async function POST(request: Request) {
+export const POST = aiRoute("ocr", async (request: Request) => {
   try {
     assertSameOrigin(request);
     const body = (await request.json()) as { image?: unknown; pageNumber?: unknown };
@@ -22,11 +22,12 @@ export async function POST(request: Request) {
     await consumeQuota(user, "embedding", OCR_INDEXING_UNITS_PER_PAGE);
 
     const config = getOpenAIConfig();
-    const upstream = await fetch(`${config.baseUrl}/responses`, {
+    const upstream = await providerFetch("ocr", user.userId, `${config.baseUrl}/responses`, {
       method: "POST",
       headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
       body: JSON.stringify({
         model: config.ocrModel,
+        store: false,
         instructions: [
           "You are an OCR transcription engine.",
           "Transcribe all readable text from the supplied PDF page image in natural reading order.",
@@ -51,4 +52,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiErrorResponse(error);
   }
-}
+});
+import { aiRoute, providerFetch } from "@/lib/operations";

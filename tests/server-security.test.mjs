@@ -21,7 +21,8 @@ const hook=registerHooks({
   }
 });
 const auth=await import("../lib/auth.ts"),quota=await import("../lib/quota.ts"),errors=await import("../lib/errors.ts"),provider=await import("../lib/openai.ts");
-const paths=["auth/login","auth/logout","admin/users","admin/feedback","quota","samples","preferences","feedback","embed","answer","transcribe","speech","ocr","history/summary"];
+const ops=await import("../lib/operations.ts"),backup=await import("../lib/server-backup.ts"),cryptoBackup=await import("../lib/backup-crypto.ts");
+const paths=["auth/login","auth/logout","admin/users","admin/feedback","admin/operations","admin/backup","health","quota","samples","preferences","feedback","embed","answer","transcribe","speech","ocr","history/summary"];
 const routes=Object.fromEntries(await Promise.all(paths.map(async path=>[path,await import(`../app/api/${path}/route.ts`)])));
 hook.deregister();
 const originalFetch=globalThis.fetch;
@@ -140,4 +141,109 @@ test("invalid answer evidence fails before consuming question quota",async()=>{
   const user=await reader();await login();
   const response=await routes.answer.POST(request("answer",{question:"Why?",contexts:[{id:"bad",text:"Some text"}]}));
   assert.equal(response.status,400);assert.equal((await quota.getQuotaSnapshot(user)).questions.used,0);
+});
+
+test("global reservations are atomic across accounts and never overspend under concurrency",async()=>{
+  const outcomes=await Promise.allSettled(Array.from({length:20},(_,i)=>ops.reserveProvider(`account-${i}`,1500000)));
+  const accepted=outcomes.filter(r=>r.status==="fulfilled");assert.equal(accepted.length,3);
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,4500000);
+  for(const r of accepted)await ops.releaseProvider(r.value);
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,4500000,"releasing a lease never refunds spend");
+  await assert.rejects(ops.reserveProvider("next",500001),{status:429});
+  await ops.reserveProvider("next",500000);
+});
+test("global/user concurrency, kill switch, expiry and Singapore day rollover are enforced",async()=>{
+  const now=Date.parse("2026-10-18T15:59:00Z");
+  await ops.reserveProvider("alice",1000,now);await ops.reserveProvider("alice",1000,now);
+  await assert.rejects(ops.reserveProvider("alice",1000,now),{status:429});
+  await ops.reserveProvider("bob",1000,now);await ops.reserveProvider("carol",1000,now);
+  await assert.rejects(ops.reserveProvider("dave",1000,now),{status:429});
+  await ops.reserveProvider("dave",1000,now+181000);
+  assert.deepEqual(database.prepare("SELECT date,reserved_micros FROM operations_usage ORDER BY date").all().map(r=>({...r})),[
+    {date:"2026-10-18",reserved_micros:4000},{date:"2026-10-19",reserved_micros:1000}]);
+  database.prepare("UPDATE operations_settings SET enabled=0").run();
+  await assert.rejects(ops.reserveProvider("dave",1000,now+181000),{status:429});
+  for(const n of [0,-1,NaN,Infinity,1.1])await assert.rejects(ops.reserveProvider("a",n),{status:400});
+});
+test("provider wrapper holds lease through body, charges failures, and paused service never fetches",async()=>{
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_leases").get().n,1);return Response.json({ok:true});};
+  await ops.providerFetch("embed","alice","https://provider.invalid",{method:"POST",body:'{"input":"hello"}'});
+  assert.equal(calls,1);assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_leases").get().n,0);
+  globalThis.fetch=async()=>{throw new Error("synthetic provider failure");};
+  await assert.rejects(ops.providerFetch("speech","alice","https://provider.invalid",{method:"POST",body:'{"input":"hello"}'}));
+  const reserved=database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros;assert.ok(reserved>1000);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_leases").get().n,0);
+  database.prepare("UPDATE operations_settings SET enabled=0").run();
+  globalThis.fetch=async()=>{assert.fail("paused service must not fetch");};
+  await assert.rejects(ops.providerFetch("embed","alice","https://provider.invalid",{body:"{}"}),{status:429});
+  assert.equal(ops.estimateReservation("transcribe",new FormData()),1000000);
+});
+test("oversized/chunked AI and login bodies are rejected before parsing or provider calls",async()=>{
+  await reader();await login();
+  assert.equal((await routes.speech.POST(new Request("https://voicebook.test/api/speech",{method:"POST",headers:{"Content-Length":"40001"},body:"{}"}))).status,413);
+  assert.equal((await routes.speech.POST(request("speech",{text:"x".repeat(40001)}))).status,413);
+  assert.equal((await routes["auth/login"].POST(request("auth/login",{password:"x".repeat(4097)}))).status,413);
+});
+test("operations and backup endpoints require admin, restore is same-origin, metrics contain no content",async()=>{
+  await reader();await login();
+  assert.equal((await routes["admin/operations"].GET()).status,403);
+  assert.equal((await routes["admin/operations"].PATCH(request("admin/operations",{},"PATCH"))).status,403);
+  assert.equal((await routes["admin/backup"].POST(request("admin/backup"))).status,403);
+  assert.equal((await routes["admin/backup"].PUT(request("admin/backup",{},"PUT"))).status,403);
+  await routes.speech.POST(request("speech",{text:""}));
+  const snapshot=await ops.operationsSnapshot();assert.equal(snapshot.requests,1);assert.equal(snapshot.metrics[0].status,400);
+  assert.ok(snapshot.metrics.every(r=>!('user_id' in r)&&!('text' in r)&&!('prompt' in r)));
+});
+test("administrator budget settings validate, pause persists, reductions do not reset spend",async()=>{
+  await login("admin");await ops.reserveProvider("any",1000000);
+  assert.equal((await routes["admin/operations"].PATCH(request("admin/operations",{enabled:false,dailyBudgetUsd:-1,maxConcurrent:4},"PATCH"))).status,400);
+  const response=await routes["admin/operations"].PATCH(request("admin/operations",{enabled:false,dailyBudgetUsd:.5,maxConcurrent:2},"PATCH"));
+  assert.equal(response.status,200);const value=await response.json();assert.equal(value.reservedMicros,1000000);assert.equal(value.settings.enabled,0);assert.equal(value.alerts.length,2);
+});
+test("server encrypted snapshot restores exact application data, revokes sessions and preserves spend",async()=>{
+  await reader();await login("admin");await ops.operationsSettings();
+  const lease=await ops.reserveProvider("reader",1000);await ops.releaseProvider(lease);
+  assert.equal((await routes["admin/backup"].POST(request("admin/backup",{passphrase:"synthetic-backup-passphrase",password:"wrong"}))).status,401);
+  const exported=await routes["admin/backup"].POST(request("admin/backup",{passphrase:"synthetic-backup-passphrase",password:env.ADMIN_PASSWORD}));assert.equal(exported.status,200);
+  const encrypted=await exported.json();assert.equal('tables' in encrypted,false);
+  const snapshot=await cryptoBackup.decryptBackup(encrypted,"synthetic-backup-passphrase");
+  assert.equal('auth_sessions' in snapshot.tables,false);assert.equal('auth_login_attempts' in snapshot.tables,false);
+  await reader("new-reader");database.prepare("UPDATE operations_usage SET reserved_micros=2000").run();
+  const input={backup:encrypted,passphrase:"synthetic-backup-passphrase",password:env.ADMIN_PASSWORD,confirmation:"RESTORE SERVER DATA"};
+  assert.equal((await routes["admin/backup"].PUT(request("admin/backup",input,"PUT"))).status,409);
+  database.prepare("UPDATE operations_settings SET enabled=0").run();
+  assert.equal((await routes["admin/backup"].PUT(request("admin/backup",{...input,password:"wrong"},"PUT"))).status,401);
+  assert.equal((await routes["admin/backup"].PUT(request("admin/backup",input,"PUT"))).status,200);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM app_users").get().n,2);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM auth_sessions").get().n,0);
+  assert.equal(database.prepare("SELECT enabled FROM operations_settings").get().enabled,0);
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,2000);
+});
+test("server restore validates orphan data and rolls back completely on SQL constraint failure",async()=>{
+  await reader();await login("admin");await ops.operationsSettings();
+  database.prepare("UPDATE operations_settings SET enabled=0").run();
+  const snapshot=await backup.exportServerSnapshot(), before=JSON.stringify(database.prepare("SELECT * FROM app_users ORDER BY user_id").all());
+  const orphan=structuredClone(snapshot);orphan.tables.reader_preferences.push({user_id:"absent",settings:"{}",updated_at:"now"});
+  assert.throws(()=>backup.validateServerSnapshot(orphan),{status:400});
+  const broken=structuredClone(snapshot);broken.tables.app_users[0].username=broken.tables.app_users[1].username;
+  await assert.rejects(backup.restoreServerSnapshot(broken,"admin"));
+  assert.equal(JSON.stringify(database.prepare("SELECT * FROM app_users ORDER BY user_id").all()),before);
+  assert.ok(database.prepare("SELECT COUNT(*) AS n FROM auth_sessions").get().n>0);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_audit WHERE action LIKE 'Server restore%'").get().n,0);
+});
+test("restore requires drained leases, corrupted backups cannot change database",async()=>{
+  await login("admin");const snapshot=await backup.exportServerSnapshot();
+  await ops.reserveProvider("alice",1000);database.prepare("UPDATE operations_settings SET enabled=0").run();
+  await assert.rejects(backup.restoreServerSnapshot(snapshot,"admin"),{status:409});
+  const encrypted=await cryptoBackup.encryptBackup(snapshot,"synthetic-backup-passphrase");encrypted.data=encrypted.data.slice(0,-8)+"AAAAAAAA";
+  await assert.rejects(cryptoBackup.decryptBackup(encrypted,"synthetic-backup-passphrase"));
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM app_users").get().n,1);
+});
+test("health is no-store and fails closed on missing schema without leaking SQL",async()=>{
+  const saved=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="synthetic-configured-value";
+  try {
+    const good=await routes.health.GET();assert.equal(good.status,200);assert.equal(good.headers.get("cache-control"),"no-store");
+    database.exec("DROP TABLE operations_metrics");const failed=await routes.health.GET();assert.equal(failed.status,503);assert.doesNotMatch(await failed.text(),/operations_metrics|SELECT/);
+  } finally { if(saved===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=saved; }
 });

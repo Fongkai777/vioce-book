@@ -4,6 +4,7 @@ import { BookOpen, FileText, MessageSquare, Search, Trash2, Upload, CheckCircle2
 import { getBook, getBookPdf, type BookSummary, type StoredBook } from "../lib/book-library.ts";
 import { bookReadiness, chunkPageLabel, filterChunks, indexStatistics, locatePassage, PASSAGES_PER_PAGE, type PassageTarget } from "../lib/book-inspector.ts";
 import PdfPreview from "./pdf-preview.tsx";
+import BookBackupControls from "./book-backup-controls.tsx";
 
 type DetailTab = "overview" | "content";
 const detailTabs: { id: DetailTab; label: string; icon: typeof FileText }[] = [
@@ -128,6 +129,7 @@ export default function BookManager({ ownerId, books, preferredBookId, passageTa
   }, [ownerId, selectedId, retry]);
   const visible = books.filter(book => book.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   return <div className="book-manager">
+    <BookBackupControls ownerId={ownerId} bookId={selectedId} disabled={disabled} />
     <header className="manager-heading"><div><p className="eyebrow">Book management</p><h1>Your books, ready for conversation.</h1><p>Choose a book, check its status, or read its content. Your library stays in this browser, under your account.</p></div><div className="manager-actions"><button onClick={onSamples} disabled={disabled}><BookOpen size={15} /> Try a sample</button><button className="manager-primary" onClick={onUpload} disabled={disabled}><Upload size={15} /> Upload a PDF</button></div></header>
     {status && <p className="manager-status" role="status">{status}</p>}{error && <p className="inspector-error" role="alert">{error}</p>}
     <div className="manager-body"><aside className="manager-books" aria-label="Managed books"><label className="manager-search"><Search size={15} /><input aria-label="Search books" placeholder="Find a book…" value={search} onChange={event => setSearch(event.target.value)} /></label><p className="inspector-note">{books.length} {books.length === 1 ? "book" : "books"} · Local library</p>
