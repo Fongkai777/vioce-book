@@ -1,177 +1,85 @@
 # Voicebook
 
-[中文项目介绍](README.zh-CN.md) · [English](README.md) · [在线体验 / Live demo](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site) · [中文用户手册](docs/USER-MANUAL.zh-CN.md)
+[中文](README.zh-CN.md) · [Live demo](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site) · [User guide / 用户手册](docs/USER-MANUAL.zh-CN.md)
 
-[![CI](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml/badge.svg)](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml)
+[![CI](https://github.com/Fongkai777/voice-book/actions/workflows/ci.yml/badge.svg)](https://github.com/Fongkai777/voice-book/actions/workflows/ci.yml)
 
-**Submission / 提交验收:** [English report](docs/acceptance/README.md) · [中文报告](docs/acceptance/README.zh-CN.md) · [Complete 12-chapter PDF](output/pdf/alice-in-wonderland.pdf) · [70-second screenshot demo](docs/acceptance/demo.mp4). Includes live microphone observations, gold pages, citation navigation and refresh checks. Reviewer credentials are supplied privately, never in this repository.
+A voice-first PDF reading companion for the Wiz AI Builder Intern take-home assignment. Upload a book, ask through your microphone, and hear an answer with clickable source passages.
 
-Voicebook 是一个以语音为主要入口的 PDF 阅读问答网站：选书或上传 PDF，直接说出问题，获得带原文引用的回答和自动语音播放。支持扫描页 OCR、多本书与索引复用、连续追问和打断、阅读偏好、反馈重答、账号隔离及用量管理。
+## Try it
 
-中文读者可从[五分钟体验流程](docs/USER-MANUAL.zh-CN.md#1-五分钟开始体验)开始；开发者和考官可阅读[中文项目说明与文档导航](README.zh-CN.md)。当前定位是具备发布检查的受控演示，不代表已通过全面生产或独立安全认证。
+1. Open the demo and create a regular account. Self-registration allows **two accounts per Singapore calendar day**; if full, ask the administrator for a reviewer account.
+2. Upload the [12-chapter test PDF](output/pdf/alice-in-wonderland.pdf), or choose **Try a sample** for a quick start. Short samples do not replace the assignment's long-book test.
+3. Start a voice conversation. Transcripts appear in chat and send automatically; answers play aloud. Interrupt, retry, and follow citations back to the book.
+4. Explore **Reading preferences**, answer feedback, and **Book management**.
 
-Voicebook is a voice-first PDF reading companion built for the Wiz AI Builder Intern take-home assignment. Upload a long PDF, ask a question through the microphone, and hear a concise answer grounded in cited passages from the book.
-
-**Deployment scope:** an account-controlled demo with release checks, not a certification of unrestricted multi-tenant production readiness. Review the [operating runbook and release gates](docs/OPERATIONS.md) before expanding access. The runtime is Next-style routes on Vinext/Vite and Cloudflare Workers + D1, not a static site or standalone Node server.
-
-## Highlights
-
-- Browser-side PDF parsing with page provenance and OCR fallback for scanned pages; the original PDF is never stored on the app server.
-- A multi-book local library backed by IndexedDB, including each PDF, its chunks, and its embeddings.
-- Lightweight library metadata is separate from book content and PDF blobs, with an atomic migration from the original store.
-- Import existing Counseling Copilot text, chunks and vectors without OCR, splitting or re-embedding.
-- Instant switching between previously indexed books without repeating parsing or embedding calls.
-- Heading-aware section detection and overlapping structural chunks.
-- Hybrid retrieval: OpenAI embeddings + BM25 exact-match recall.
-- Reciprocal-rank fusion and diversity-aware final evidence selection.
-- Page-level source cards and a full passage drawer.
-- Microphone capture, OpenAI transcription, grounded answer generation, and AI voice playback.
-- Editable transcripts, suggested questions, automatic spoken replies and interruption controls.
-- Per-user daily question and voice allowances backed by D1.
-- An administrator dashboard for reviewing usage and adjusting individual limits.
-- A global US$5/day budget with model-specific token pricing, pre-request reservations and provider-usage reconciliation; emergency pause and atomic concurrency gates. Audio/fallback estimates are labeled separately; this is not a provider invoice. See [Pricing](docs/PRICING.md).
-- Administrator health/error/latency metrics and manual encrypted server backups; account-scoped book/PDF/index/chat backup and restore in Book management.
-- Offline unit/UI and SQLite-backed route tests for retrieval, storage, history, voice, authentication, quotas and account isolation.
+See the [acceptance report](docs/acceptance/README.md) and [70-second screenshot demo](docs/acceptance/demo.mp4). Reviewer passwords are shared privately, never committed.
 
 ## Run locally
 
-For operations: at `/admin`, **Health, budget & recovery** shows database readiness, daily reserved budget, login/AI request metrics and warnings. Adjust the US$5/day global limit or pause new AI calls. Set a separate provider-side spending cap; the app's estimate is not a provider invoice.
-
-**Encrypted server backup & restore** downloads accounts, quotas, preferences and feedback. **Book management → Backup & restore** downloads the selected book, PDF, vectors and saved conversations without any model call. No automatic jobs or cloud backup storage are enabled. Read [Backup and recovery](docs/BACKUP-RESTORE.md) before replacing server data.
-
-`pnpm audit` checks the full dependency tree with no advisory exceptions (`pnpm audit:reviewed` is a backwards-compatible alias). Both esbuild advisories are fixed, and the braces dependency chain has been removed by adapting two build-tool consumers to tinyglobby. The full audit reports no known vulnerabilities at the 2026-10-19 review; see [SECURITY.md](SECURITY.md) for compatibility patches and maintenance requirements.
-
-Recommended: Node.js 24 LTS and pnpm 11.25.0. Tests/builds need no API keys. Real model calls require separately configured credentials.
+Use Node.js 24 and pnpm 11.25.0. Offline tests and builds need no API keys; live model calls do.
 
 ```bash
-git clone https://github.com/Fongkai777/vioce-book.git
-cd vioce-book
+git clone https://github.com/Fongkai777/voice-book.git
+cd voice-book
 npm install --global pnpm@11.25.0
 pnpm install --frozen-lockfile
 cp .env.example .env.local
-# Set OPENAI_API_KEY and a unique ADMIN_PASSWORD in .env.local
+# Configure OPENAI_API_KEY and a unique ADMIN_PASSWORD in .env.local
 pnpm db:migrate:local
 pnpm dev
 ```
 
-Open the printed URL (normally port 5173). Microphone access requires localhost or HTTPS. Reviewers can choose **Create an account** on `/login`: at most **two successful self-registrations across the site per Singapore calendar day**, resetting at 00:00 UTC+8. New accounts are regular users (default 20 questions / 10 voice minutes per day, plus the shared site budget). After registering, sign in with the new password. If places are full, an administrator can still create regular accounts at `/admin`; these do not consume self-registration places. Log in as administrator with ADMIN_USERNAME / ADMIN_PASSWORD. The bootstrap password creates an account only once; editing the environment later does not reset an existing password.
-
-`db:migrate:local` targets the emulator only. Older databases created by manually executing SQL need their migration history reconciled first. Do not delete an existing database to resolve a migration mismatch.
-
-## Environment
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `OPENAI_API_KEY` | required | Server-side API credential |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | API base URL |
-| `OPENAI_QA_MODEL` | `gpt-5-mini` | Grounded answer model |
-| `OPENAI_OCR_MODEL` | value of `OPENAI_QA_MODEL` | Scanned-page OCR model |
-| `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-mini-transcribe` | Speech recognition |
-| `OPENAI_TTS_MODEL` | `gpt-4o-mini-tts` | Speech generation |
-| `OPENAI_TTS_VOICE` | `coral` | Synthesized voice |
-| `ADMIN_USERNAME` | `admin` | Bootstrap administrator username |
-| `ADMIN_PASSWORD` | required | Bootstrap administrator password; configure as a hosted secret |
-| `COPILOT_EMBEDDING_API_KEY` | optional | Server-only credential for imported text-embedding-v4 query vectors |
-| `COPILOT_EMBEDDING_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Original imported-index embedding endpoint |
-
-Secrets stay in `.env.local`, which is ignored by Git. The browser only calls the application's server routes. User passwords are PBKDF2-hashed before they are stored in D1, and sessions use HttpOnly cookies.
-
-## Commands
+Open the printed URL. Microphones require localhost or HTTPS. Bootstrap credentials create the administrator only when it does not exist; changing an environment variable does not reset an existing password. Never put secrets in public files or NEXT_PUBLIC_* variables.
 
 ```bash
-pnpm check          # release scan + types + offline tests + production build
-pnpm test           # unit/UI and SQLite-backed server tests; no paid calls
-pnpm typecheck      # TypeScript
-pnpm check:release  # private-file boundaries and historical secret-pattern scan
-pnpm build          # Worker and client build
-pnpm dev            # local development
-pnpm db:migrate:local # local D1 migrations only
+pnpm check           # release boundaries, types, offline tests, production build
+pnpm audit           # full dependency audit, no advisory exceptions
 ```
 
-After generating a schema migration with `pnpm db:generate`, apply it to local D1 before running the built Worker preview. Hosted Sites deployments apply committed migrations automatically.
+GitHub hosts source and CI; pushing does not deploy the website. Hosting uses Sites, Vinext/Vite, Cloudflare Workers and D1. See [operations](docs/OPERATIONS.md).
+
+## Architecture
+
+```text
+PDF → browser extraction / scanned-page OCR → chunks + embeddings
+                                               ↓
+                         account-scoped browser library (IndexedDB)
+                                               ↓
+Mic → transcription → query embedding → BM25 + vector retrieval
+                                               ↓
+                      cited answer + conversation context → speech
+                                               ↓
+                  authenticated server: quotas, budget, providers
+```
+
+- Books, PDFs, indexes and chat stay in account-scoped browser storage; reopening a book reuses its index.
+- Relevant content is sent to model providers for embedding, OCR, answering and speech. “Local storage” does not mean “no data leaves the browser.”
+- Preferences, explicit feedback, accounts and usage live in D1. Admins can adjust limits, disable regular users and reset their passwords with reauthentication.
+- Default site budget: US$5/day, with reservations, usage reconciliation, concurrency limits and an emergency pause. Manual encrypted backups and health metrics are available.
+- Client responsibilities are split into book processing, local-library, chat-history and reply-audio modules. The page coordinates the conversation.
+
+## Known limits
+
+This is a **controlled demo**, not a certification of unrestricted production readiness.
+
+- The server cannot verify client-supplied book excerpts. Grounding is an official-client behavior, not a server-enforced guarantee.
+- Local account scoping is not encryption or protection against someone controlling the browser. No private-library cross-device sync.
+- Voice uses transcription → RAG → TTS, not native real-time speech-to-speech. Echo, noise, latency and imperfect interruption remain possible.
+- Password hashing remains PBKDF2-SHA256 at 100,000 iterations for deployment compatibility, below the referenced OWASP recommendation. No MFA or self-service recovery.
+- App budget estimates are not an invoice cap. Set a provider-side limit. No automatic backups or scheduled monitoring are enabled.
+
+See [security](SECURITY.md), [evaluation](docs/EVALUATION.md) and [production release gates](docs/OPERATIONS.md#gates-before-unrestricted-production-access).
 
 ## Documentation
 
-- [用户手册与五分钟体验流程](docs/USER-MANUAL.zh-CN.md)
-- Architecture: [English](docs/ARCHITECTURE.md) · [中文](docs/ARCHITECTURE.zh-CN.md)
-- Testing and answer-quality evaluation: [English](docs/EVALUATION.md) · [中文](docs/EVALUATION.zh-CN.md)
-- AI-assisted workflow: [English](docs/AI_WORKFLOW.md) · [中文](docs/AI_WORKFLOW.zh-CN.md)
-- Deployment, rollback and release gates: [English](docs/OPERATIONS.md) · [中文](docs/OPERATIONS.zh-CN.md)
-- API and data boundaries: [English](docs/API.md) · [中文](docs/API.zh-CN.md)
-- Backup and recovery: [English](docs/BACKUP-RESTORE.md) · [中文](docs/BACKUP-RESTORE.zh-CN.md)
-- AI cost accounting: [English](docs/PRICING.md) · [中文](docs/PRICING.zh-CN.md)
-- Security policy: [English](SECURITY.md) · [中文](SECURITY.zh-CN.md)
-- Contributing and validation: [English](CONTRIBUTING.md) · [中文](CONTRIBUTING.zh-CN.md)
-
-## Import an existing local library
-
-Run `python3 scripts/export-copilot-library.py "/path/to/Counseling Copilot" "/path/to/voicebook/local-library/copilot.voicebook.json"`.
-The exporter reads the source SQLite database in read-only mode and copies existing LlamaIndex text nodes and vectors. It does not read credentials or call an API. Original source files remain untouched. The one-time **Import saved library** UI has been removed after migration; the exporter and bundle validator remain available for maintenance, but bundles can no longer be uploaded through the reading page. Existing imported books and indexes are unchanged. Add new PDFs with the **+** button in Local library.
-
-The `local-library/` directory is ignored and is not included in the website's build. Do not place these files in `public/`. Each browser/account imports its own copy; they are not a shared hosted book catalog. Imported books retain their original `text-embedding-v4` / 1024-dimensional vectors; only each question gets a new vector through the configured original provider. New PDFs continue using `text-embedding-3-small`. Missing original PDF page provenance is explicitly displayed rather than guessed. The import contains processed text and vectors, not PDF originals.
-
-## Scope and next steps
-
-### Book management
-
-The **Chat / Book management** tabs separate conversation from inspection. Book management supports searching/selecting local books, uploading PDFs, trying samples, removing an account's local copy (with confirmation), and opening its conversation without re-indexing.
-
-- **Overview:** readiness, page/section/passage counts, source, account-local storage, saved date and extraction information. New PDF uploads record the PDF's author metadata when provided, OCR page count and included page count; legacy copies explicitly say when extraction information was not recorded. Empty, zero or malformed vectors do not count as ready. **Technical details** is collapsed by default and contains model, dimensions, validation and page-reference information, never raw vector arrays.
-- **Content:** lazily reads the selected account's PDF blob, renders one page at a time with the same-origin PDF.js worker, and offers page navigation and zoom. Canvas rendering is cancelled/destroyed on navigation. No PDF or preview data is uploaded, and no model request is made. Samples and legacy imports without PDFs show saved text instead, progressively revealed for large books. **Show passages** switches to searchable saved passages, with section filters, 12-item pagination, known page ranges and links back to the PDF page.
-- Citation drawers offer **View in book** to open Content and highlight the exact saved passage, including passages on later list pages. Missing citations and unknown page numbers are explicit. End voice mode before leaving the conversation. No existing books are reprocessed and no indexes are changed by inspection.
-- Account-scoped file reads are independent of lightweight metadata lists and conversation index reads. Selecting another book discards stale asynchronous preview results; inspecting a book does not change the active conversation. Deletion still removes only that account's local copy and associated history.
-
-### Cloud sample library
-
-**Try a sample** on the start screen and **Browse sample books** in Local library offer two original, AI-authored English mini-books. They are examples, not excerpts of the owner's private books. Only these allowlisted texts and their prebuilt indexes ship in the server bundle; `local-library/`, uploaded PDFs, personal indexes and conversations do not.
-
-- `GET /api/samples` requires the existing username/password session and returns lightweight metadata. `GET /api/samples?id=...` returns one allowlisted, read-only sample bundle; unknown IDs return 404. There is no upload or mutation API for the shared catalog.
-- Selection copies the sample into this browser's account-scoped IndexedDB. Existing local copies are reopened without downloading, chunking or re-embedding. Atomic insert-only writes prevent repeated/concurrent selection from replacing the reader's copy.
-- Book metadata, content/index, history and summary caches stay scoped by account and book. Removing one account's copy does not remove the shared template or another account's copy. This is browser-local logical isolation, not encrypted storage or cross-device synchronization; someone controlling the browser's developer tools can access its local storage.
-- Opening a sample uses no AI API call and spends no question/indexing allowance. Asking questions still creates a query embedding and uses the ordinary answer/voice quotas. Model processing and explicitly submitted feedback follow the same rules as personal books.
-- The small catalog is bundled with the hosted app, so it remains available when the developer's computer is off. It does not require an R2 bucket. Future large catalogs should use dedicated object storage.
-- `node scripts/build-sample-index.mjs` is an explicit maintenance operation using the approved server-side credential. It generates `content/sample-index.json` once (12 passages / 2 books); an unchanged source hash skips API calls. It is never run by deployment or sample selection. Bump sample IDs when changing published content to preserve existing readers' copies.
-
-This version deliberately keeps each uploaded PDF and its vector index in that browser's IndexedDB, scoped in the UI to the signed-in local account. Pages with little or no embedded text are rendered locally and sent individually to the OCR endpoint; ordinary text pages stay entirely in the browser until extracted passages are embedded. Clearing site data, switching browsers or devices, or using a private browsing session creates a separate library. Available browser storage, OCR time, and the daily indexing allowance remain practical limits. A larger production system could move parsing to a background job and synchronize files and indexes across devices.
-
-## Reference projects
-
-### Hands-free voice conversation
-
-Select a book and press **Start voice conversation** once. An AudioWorklet measures microphone input locally and displays its real level. Sustained speech starts a turn; approximately 1.1 seconds of silence ends it (or use **Done speaking**). A 450 ms pre-roll preserves the beginning; turns are capped at 58 seconds and sent as mono 16 kHz WAV to the existing authenticated transcription route.
-
-The old combined microphone/text-input/send composer is removed. There is one explicit **Start voice conversation** button; the active voice card only contains microphone status, the level meter and capture controls. **Stop reply** lives beside the assistant's loading indicator and remains in the reply area during playback. Suggested questions remain available.
-
-Recognized speech appears directly as a **You** message in the conversation, never in a separate transcription preview. When all queued transcription is finished and the user is no longer speaking, the message sends immediately, with no confirmation button or 1.8-second review timer. If the user continues speaking before transcription finishes, the same message accumulates the words. Transcription is turn-based, not live word-by-word streaming.
-
-Draft lifecycle is independent of assistant cancellation: `VoiceDraft` owns the unsent words; the transcription queue and reply pipeline have separate abort signals. Empty/whitespace transcription is a no-op, not a fatal microphone error. Actual transcription failures, the input limit, editing, muting or ending voice hold incomplete words for review **inside their chat bubble**. Exceptional **Send question / Leave unsent** controls are available there; sending/editing is disabled while recording/transcription continues. Unsent words stay visible but are excluded from model context until explicitly sent.
-
-Every recognized message has a stable ID. Submission changes that message to pending; completion, failure and interruption update it in place. Stopping a reply, speaking again, ending voice or a failed request never deletes the user question. Failed/stopped replies offer **Retry reply** without duplicating the question. With history enabled, recognized and pending messages are saved before an answer exists, and serialized history writes preserve their latest status. After reopening a book, unfinished requests show as stopped, unsent words remain unsent, and no paid request restarts automatically. Previously submitted but unanswered questions remain in context with an explicit no-answer note, not a fabricated assistant reply.
-
-Answers retain the existing book retrieval, citations, preferences, history and quotas. Spoken output starts automatically, with a short first phrase and one prefetched remainder for longer answers. Speaking during playback interrupts it; **Stop reply** also cancels pending work. Abort signals and stale-result checks prevent cancelled replies/audio from resurfacing. Written answers stay available; interrupted playback is marked in history so the next response should not assume it was fully heard. **Play saved audio** replays the audio already downloaded, including partial output after interruption. Browser autoplay restrictions have an explicit manual fallback.
-
-This adapts the turn-taking and interruption principles from [OpenAI's Realtime conversation guide](https://developers.openai.com/api/docs/guides/realtime-conversations) and [VAD guide](https://developers.openai.com/api/docs/guides/realtime-vad). It is **not** a native Realtime/WebRTC speech-to-speech connection: the current sequence remains transcription → RAG answer → speech generation, with corresponding network delays. Local energy-based detection is not semantic VAD. Browser echo cancellation and a more conservative playback threshold help, but background noise or loudspeaker echo may cause false interruptions; headphones are recommended.
-
-The microphone starts only after the user requests voice mode. Mute disables its track; ending voice, leaving the tab, logging out, unmounting or 90 seconds without a new utterance stops capture. Audio before detected turns stays in memory locally; detected turns are sent to the configured provider through the server. No new provider/key or browser-exposed secret is introduced. Accepted requests still consume their normal quotas even when later interrupted; cancellation is not a billing refund. Single-turn transcription is limited to 2,000 displayed characters and TTS to 5,000 characters, matching the existing answer/speech input limits.
-
-Validation includes offline tests and a browser-only synthetic-audio harness exercising the actual AudioWorklet, automatic submission into chat, autoplay, stopping generation/playback, speech interruption, refresh recovery and retry after answer failure without duplicating messages. State tests also cover consecutive utterance merging, empty-only recovery, failed continuations, unsent-message retention and account/book isolation. No real microphone or paid API was used in the harness. Hardware microphone quality and real-provider latency require a live user trial.
-
-The implementation is original, with design ideas informed by:
-
-- [rag-over-pdf](https://github.com/sarmakska/rag-over-pdf): readable hybrid retrieval and citation UX.
-- [docchat](https://github.com/AbuBaker91-hub/docchat): heading-aware chunks and retrieval evaluation.
-- [LiveKit Agents examples](https://github.com/livekit/agents/tree/main/examples/voice_agents): voice interaction states and TTS-oriented responses.
-- [RAGFlow](https://github.com/infiniflow/ragflow): document-aware parsing principles.
-- [AnythingLLM](https://github.com/Mintplex-Labs/anything-llm): ingestion status and document workspace UX.
-
-# Conversation history and context
-
-- **在本机完整保存每本书的对话** is enabled by default; an explicit opt-out remains respected. It stores all turns and their original sources in IndexedDB, isolated by account and book. There is no application-imposed turn-count retention limit. Browser disk limits/clearing still apply; this is not cross-device cloud backup.
-- Existing localStorage history migrates on book selection. The old copy is removed only after the new transaction commits. Previously discarded turns cannot be reconstructed.
-- Short conversations send every prior question/answer, excluding stale citation markers. The current conservative history envelope is 240,000 UTF-8 bytes, independent of turn count. This is an application budget, not an exact tokenizer count or the model's advertised context size. It reserves space for book evidence, instructions and output with the current `gpt-5-mini`; review the budget before switching to a smaller-context model. See the [official model context limits](https://developers.openai.com/api/docs/models/gpt-5-mini).
-- Above that budget, the browser keeps a recent verbatim window, summarizes **all** earlier text in blocks, recursively combines summaries if needed, and retrieves relevant older original passages with Chinese/English keyword matching and explicit turn references. Retrieval is best effort, not a guarantee of perfect recall.
-- Summaries are content-addressed and cached per book. Original chat is never replaced by a summary. Partial completed summary work survives retries; failure is shown rather than silently dropping earlier context. A first long-history summary may take longer.
-- `/api/history/summary` requires login, enforces input/output limits and a separate 500,000-character daily maintenance allowance (minimum 1,000 per request), and does not consume a question. Summary/answer requests use `store: false`; the app does not persist chat in D1. Model-provider processing still occurs.
-- Deleting a book or clearing history deletes its stored conversations and summary cache; disabling history clears this account's stored history on the current browser while retaining the active in-memory conversation. Explicit personal preferences remain separate.
-- Regression checks: `node --experimental-strip-types --test tests/*.test.mjs`, `node scripts/check-reader-feedback.mjs --with-history-model` against local preview after applying migrations. The latter uses ephemeral local accounts and live API calls with synthetic dialogue only.
+| Topic | English | 中文 |
+| --- | --- | --- |
+| Features, voice lifecycle, configuration and references | [Details](docs/FEATURES.md) | [详细说明](docs/FEATURES.zh-CN.md) |
+| Architecture | [Architecture](docs/ARCHITECTURE.md) | [架构](docs/ARCHITECTURE.zh-CN.md) |
+| Testing and acceptance | [Evaluation](docs/EVALUATION.md) | [评估](docs/EVALUATION.zh-CN.md) |
+| API and data boundaries | [API](docs/API.md) | [接口](docs/API.zh-CN.md) |
+| Operations and recovery | [Operations](docs/OPERATIONS.md) / [Backup](docs/BACKUP-RESTORE.md) | [运维](docs/OPERATIONS.zh-CN.md) / [备份](docs/BACKUP-RESTORE.zh-CN.md) |
+| Pricing and security | [Pricing](docs/PRICING.md) / [Security](SECURITY.md) | [费用](docs/PRICING.zh-CN.md) / [安全](SECURITY.zh-CN.md) |
+| Development | [Contributing](CONTRIBUTING.md) / [AI workflow](docs/AI_WORKFLOW.md) | [贡献](CONTRIBUTING.zh-CN.md) / [AI 工作流](docs/AI_WORKFLOW.zh-CN.md) |
 
