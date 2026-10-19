@@ -236,6 +236,9 @@ test("answer route normalizes source IDs and sends concise capability-bounded in
     database.prepare("INSERT INTO reader_preferences(user_id,settings,updated_at) VALUES(?,?,?)").run(user.userId,JSON.stringify({length:"detailed"}),new Date().toISOString());
     result=await routes.answer.POST(request("answer",{question:"Explain",contexts}));assert.equal(result.status,200);
     assert.deepEqual(sent.text,{verbosity:"medium"});assert.match(sent.instructions,/300–500/);
+    result=await routes.answer.POST(request("answer",{question:"只用一句话解释",contexts}));assert.equal(result.status,200);
+    assert.deepEqual(sent.text,{verbosity:"low"});assert.match(sent.instructions,/exactly ONE sentence/);
+    assert.equal(JSON.parse(database.prepare("SELECT settings FROM reader_preferences WHERE user_id=?").get(user.userId).settings).length,"detailed");
   } finally {
     for(const [name,value] of [["OPENAI_API_KEY",saved.key],["OPENAI_QA_MODEL",saved.model]]) {if(value===undefined)delete process.env[name];else process.env[name]=value;}
   }

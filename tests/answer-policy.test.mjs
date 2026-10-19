@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {normalizeCitations, stripCitations} from "../lib/citations.ts";
-import {answerTextOptions, capabilityInstructions, citationInstructions} from "../lib/answer-policy.ts";
+import {answerTextOptions, capabilityInstructions, citationInstructions, requestsOneSentence} from "../lib/answer-policy.ts";
 import {normalizeHistory, validateContext} from "../lib/conversation-context.ts";
 import {preferenceInstructions} from "../lib/personalization.ts";
 import {speechSegments} from "../lib/voice-turn.ts";
@@ -36,7 +36,17 @@ test("verified GPT-5 family gets low verbosity without breaking custom models", 
 test("default style is voice-sized, with explicit evidence and capability boundaries", () => {
   assert.match(preferenceInstructions({}), /100–180/);
   assert.match(preferenceInstructions({length:"detailed"}), /300–500/);
+  assert.match(preferenceInstructions({length:"detailed"}), /当前问题明确要求.*优先于默认篇幅/);
+  assert.match(preferenceInstructions({guidance:"先给一个比喻"}), /saved custom style overrides/);
   assert.match(capabilityInstructions, /NO web browser/);
   assert.match(capabilityInstructions, /Do not claim the entire book lacks it/);
   assert.match(citationInstructions, /\[S1\]\[S2\]/);
+});
+test("explicit one-sentence requests override presets without matching negated requests", () => {
+  for(const value of ["只用一句话解释", "请把它缩短成一句话", "Explain in one sentence."])
+    assert.equal(requestsOneSentence(value),true);
+  assert.equal(requestsOneSentence("Why?", "只用一句话，不要再补理由。"),true);
+  assert.equal(requestsOneSentence("不要只用一句话，请展开解释"),false);
+  assert.equal(requestsOneSentence("Do not answer in one sentence"),false);
+  assert.equal(requestsOneSentence("请详细解释"),false);
 });

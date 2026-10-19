@@ -9,6 +9,14 @@ export const capabilityInstructions = [
 
 export const citationInstructions = "# Citation contract\nUse only supplied source IDs, formatted exactly [S1] or [S2]. For multiple sources write [S1][S2], not lists, ranges or spaced markers. Cite the specific claim, not every paragraph indiscriminately. Never invent an ID; insufficient-evidence statements do not need unrelated citations.";
 
+export function requestsOneSentence(question: string, revision = "") {
+  // A narrow deterministic override for an explicit current-turn constraint.
+  // Do not let a saved request for an example force a second sentence.
+  return [revision, question].some(text =>
+    !/(?:不要|不必|不用|不需要).{0,8}一句|(?:not|don't|do not).{0,15}one sentence/i.test(text) &&
+    /(?:只用|仅用|只要|用|缩短成|压缩成)\s*一句话|(?:in|only|just|exactly) (?:a |one |a single )sentence/i.test(text));
+}
+
 export function answerTextOptions(model: string, length: string) {
   // Keep custom models compatible. Only opt in for this verified GPT-5 family.
   return /^gpt-5(?:-mini|-nano)?(?:-\d{4}-\d{2}-\d{2})?$/.test(model)

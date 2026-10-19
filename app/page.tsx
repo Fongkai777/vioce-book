@@ -27,6 +27,7 @@ import { speechSegments, TurnGate } from "@/lib/voice-turn";
 import { normalizeCitations, stripCitations } from "@/lib/citations";
 import { VoiceDraft } from "@/lib/voice-draft";
 import { VoiceInputGate } from "@/lib/voice-input-gate";
+import { PausableAudio } from "@/lib/pausable-audio";
 import { beginReply, settleReply, recoverReplies, updateVoiceMessage, leaveUnsent, type Exchange } from "@/lib/chat-turns";
 import ReplyProgress from "./reply-progress";
 import QuestionMessage from "./question-message";
@@ -97,6 +98,7 @@ export default function Home() {
   const fileInput = useRef<HTMLInputElement>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const audioPlayer = useRef<AudioBufferSourceNode | null>(null);
+  const audioPlayback = useRef<PausableAudio | null>(null);
   const capture = useRef<VoiceCapture | null>(null);
   const turnGate = useRef(new TurnGate());
   const transcriptionGate = useRef(new TurnGate());
@@ -547,9 +549,14 @@ export default function Home() {
   actions.current = {
     speechStart: () => {
       voiceInputGate.current.begin(); setVoiceInputState("listening");
-      // Stop audible speech promptly. Pending retrieval/generation is only
-      // cancelled once ASR confirms words, never by an empty noise segment.
-      if (audioPlayer.current) interruptReply();
+      // Pause sound promptly, but don't cancel for noise. Empty ASR resumes
+      // from the same position; confirmed words cancel the old turn below.
+      const playback = audioPlayback.current;
+      if (playback?.pause()) {
+        void voiceInputGate.current.wait(turnGate.current.signal).then(() => {
+          if (audioPlayback.current === playback) playback.resume();
+        }).catch(() => {});
+      }
       if (!pendingReply.current && !playingExchange.current) setStage("listening");
       setError(""); setVoiceNotice("");
     },
@@ -582,7 +589,7 @@ export default function Home() {
       if (payload.quota) setQuota(payload.quota);
       const appended = draft.current.append(payload.text);
       if (appended) interruptReply();
-      if (!appended) setVoiceNotice(draft.current.text ? "That sound contained no words. Your recognized question is kept." : "I didn’t catch any words in that sound. I’m still listening — please try again.");
+      if (!appended) setVoiceNotice(draft.current.text ? "That sound contained no words. Your recognized question is kept." : pendingReply.current || playingExchange.current ? "No new words detected. Continuing the reply." : "No words detected. Please try speaking again.");
       if (draft.current.needsReview && draft.current.text.length >= 2000) setVoiceNotice("Your question reached the 2,000-character limit. Please review it before sending.");
       if (payload.quota && payload.quota.voice.remainingSeconds < 1) { capture.current?.stop(); capture.current = null; setVoiceOn(false); setVoiceNotice("Voice allowance reached. You can still send the recognized question."); }
     } catch (caught) {
@@ -596,15 +603,10 @@ export default function Home() {
   async function playBuffer(buffer: AudioBuffer, context: AudioContext, signal: AbortSignal) {
     await voiceInputGate.current.wait(signal);
     signal.throwIfAborted();
-    if (context.state !== "running") throw new Error("Audio playback is paused by your browser. Tap Play saved audio to listen.");
-    await new Promise<void>((resolve, reject) => {
-      const player = context.createBufferSource(); player.buffer = buffer; player.connect(context.destination);
-      const cleanup = () => { signal.removeEventListener("abort", abort); player.disconnect(); if (audioPlayer.current === player) audioPlayer.current = null; };
-      const abort = () => { player.onended = null; try { player.stop(); } catch {} cleanup(); reject(new DOMException("Cancelled", "AbortError")); };
-      player.onended = () => { cleanup(); resolve(); };
-      signal.addEventListener("abort", abort, { once: true }); audioPlayer.current = player;
-      try { player.start(); } catch (error) { cleanup(); reject(error); }
-    });
+    const playback = new PausableAudio(context, buffer, node => { audioPlayer.current = node; });
+    audioPlayback.current = playback;
+    try { await playback.play(signal); }
+    finally { if (audioPlayback.current === playback) audioPlayback.current = null; }
   }
 
   async function speak(text: string, signal: AbortSignal, exchangeId: string) {
