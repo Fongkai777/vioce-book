@@ -32,8 +32,10 @@ pnpm dev
 
 打开终端输出的网址。麦克风要求 localhost 或 HTTPS。初始化密码只在管理员账号不存在时生效；改环境变量不会重置已有密码。密钥不得进入公开文件或 NEXT_PUBLIC_* 变量。
 
+首次部署前，把示例 `ADMIN_USERNAME=admin` 改为不公开的名字，并使用长随机密码。部署后修改该变量**不是重命名账号**，可能另外创建初始化管理员。详见[登录防护](SECURITY.zh-CN.md)与 [lint 规则说明](docs/LINT.md)。
+
 ```bash
-pnpm check           # 发布边界、类型、离线测试、生产构建
+pnpm check           # 发布边界、类型、lint、离线测试、生产构建
 pnpm audit           # 完整依赖审计，无告警例外
 ```
 

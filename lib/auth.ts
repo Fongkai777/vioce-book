@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ApiError } from "@/lib/errors";
+import { isIP } from "node:net";
 
 const SESSION_COOKIE = "voicebook_session";
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
@@ -43,9 +44,13 @@ async function sha256(value: string) {
 export async function enforceLoginRateLimit(request: Request, usernameInput: string) {
   const username = normalizeUsername(usernameInput);
   const address = clientAddress(request);
+  const account = await db().prepare("SELECT role FROM app_users WHERE username=? AND active=1").bind(username).first<{ role: string }>();
   const buckets = [
     { scope: `login:pair:${username}:${address}`, limit: 10 },
-    { scope: `login:account:${username}`, limit: 10 },
+    // A public username must not let remote attackers globally lock the admin.
+    // Admins retain the pair/IP limits; distributed password attacks remain a
+    // documented reason to require a strong password and MFA before wider use.
+    ...(account?.role === "admin" ? [] : [{ scope: `login:account:${username}`, limit: 10 }]),
     { scope: `login:ip:${address}`, limit: 50 },
   ];
   const results = await Promise.all(buckets.map(async bucket => {
@@ -56,7 +61,17 @@ export async function enforceLoginRateLimit(request: Request, usernameInput: str
     throw new ApiError("Too many login attempts. Try again in 15 minutes", 429);
   }
   // Successful login clears this pair/account only, never the shared IP bucket.
-  return results.slice(0, 2).map(result => result.key);
+  return results.slice(0, -1).map(result => result.key);
+}
+
+export async function enforceReauthenticationRateLimit(userId: string) {
+  // Called only after requireAdminUser. Public login attempts cannot poison the
+  // authenticated session's confirmation budget, even from the same IP.
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) throw new ApiError("Please log in to continue", 401);
+  const key = await sha256(`reauth:${userId}:${await sha256(token)}`);
+  if (await incrementAttempt(key) > 10) throw new ApiError("Too many password confirmations. Try again in 15 minutes", 429);
+  return [key];
 }
 
 export async function enforceRegistrationRateLimit(request: Request) {
@@ -70,9 +85,27 @@ async function enforceAuthRateLimit(request: Request, scope: string, message: st
   return attemptKey;
 }
 
+let lastAddressReport = { status: "", at: 0 };
+export function inspectAuthClientIp(request: Request) {
+  const ip = request.headers.get("cf-connecting-ip")?.trim() || "";
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(request.url).hostname);
+  // Cloudflare's cross-zone Worker sentinel is shared, not a visitor identity.
+  const shared = ip.toLowerCase() === "2a06:98c0:3600::103";
+  const status = isIP(ip) && !shared ? "cloudflare" : local ? "local" : shared ? "shared-worker" : "missing";
+  if (status !== lastAddressReport.status || Date.now() - lastAddressReport.at > 300_000) {
+    const event = JSON.stringify({ event: "auth_client_ip_status", status, usable: status === "cloudflare" || status === "local" });
+    if (status === "missing" || status === "shared-worker") console.warn(event); else console.info(event);
+    lastAddressReport = { status, at: Date.now() };
+  }
+  return { status, address: status === "cloudflare" ? ip : status === "local" ? "local" : null };
+}
 function clientAddress(request: Request) {
-  // Cloudflare supplies this trusted header. Do not trust client X-Forwarded-For.
-  return request.headers.get("cf-connecting-ip") || "local";
+  const { address } = inspectAuthClientIp(request);
+  // Never quietly combine all production visitors into a global "local" bucket.
+  // Fail this request closed with an actionable operator log instead of guessing
+  // a spoofable X-Forwarded-For/X-Real-IP fallback.
+  if (!address) throw new ApiError("Sign-in is temporarily unavailable. Please contact the administrator.", 503);
+  return address;
 }
 
 async function incrementAttempt(attemptKey: string) {

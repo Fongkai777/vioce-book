@@ -108,7 +108,7 @@ export default function Home() {
   const draft = useRef(new VoiceDraft());
   const draftExchange = useRef<string | null>(null);
   const pendingReply = useRef<string | null>(null);
-  const actions = useRef({ speechStart: () => {}, utterance: (_file: File, _seconds: number) => {}, stopped: (_reason: string) => {}, sendTranscript: () => {} });
+  const actions = useRef<{ speechStart: () => void; utterance: (file: File, seconds: number) => void; stopped: (reason: string) => void; sendTranscript: () => void }>({ speechStart: () => {}, utterance: () => {}, stopped: () => {}, sendTranscript: () => {} });
   const { exchanges, exchangesRef, summaries, historyWrites, updateExchanges, persistExchanges } = useChatHistory(quota?.user.userId, book?.id, preferences.rememberHistory, setVoiceNotice);
   const { replayAvailable, setReplayAvailable, audioContext, audioPlayer, audioPlayback, replay, playingExchange, prepareAudio, speak, stopAudio, replayAudio } = useReplyAudio({ voiceInputGate, turnGate, setStage, setVoiceNotice, onInterrupt: interruptReply });
   const conversationEnd = useRef<HTMLDivElement>(null);
@@ -123,7 +123,7 @@ export default function Home() {
     retrievalRetries.current.clear();
     voiceGeneration.current++; turnGate.current.cancel(); transcriptionGate.current.cancel(); capture.current?.stop();
     releaseAudioContext(audioContext);
-  }, []);
+  }, [audioContext]);
   useEffect(() => {
     const leave = () => { if (document.hidden) actions.current.stopped("Voice mode ended because this tab is no longer visible."); };
     document.addEventListener("visibilitychange", leave);

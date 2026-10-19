@@ -66,6 +66,7 @@ test("PDF preview reads only the selected account's original; chat/list reads st
   assert.equal("pdf" in await getBook("alice", book.id), false);
   assert.equal("index" in (await listBooks("alice"))[0], false);
   const {pdf, ...textOnly} = book;
+  assert.ok(pdf instanceof Blob);
   await saveBook("alice", {...textOnly, id: "text-only"});
   assert.equal(await getBookPdf("alice", "text-only"), undefined);
   await deleteBook("alice", book.id);

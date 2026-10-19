@@ -6,9 +6,17 @@
 
 The current target is Sites hosting on Cloudflare Workers with a `DB` D1 binding. The checked-in `.openai/hosting.json` identifies the existing site; do not reuse its identity for an unrelated fork. GitHub stores source and runs checks, **not** the website, secrets or personal library. Pushing to GitHub does not deploy the website.
 
-Use Node.js 24 and pnpm 11.25.0 for reproducible local checks. `pnpm install --frozen-lockfile` must succeed without changing the lockfile. `pnpm check` runs the release scan, type checker, all offline tests and the Worker/client build. No provider credentials are needed for this command. Runtime testing needs credentials configured separately.
+Use Node.js 24 and pnpm 11.25.0 for reproducible local checks. `pnpm install --frozen-lockfile` must succeed without changing the lockfile. `pnpm check` runs the release scan, type checker, lint (zero warnings), all offline tests and the Worker/client build. No provider credentials are needed for this command. Runtime testing needs credentials configured separately.
 
 ## First local launch
+
+### Authentication deployment checks
+
+Choose an unpublished `ADMIN_USERNAME` before the first bootstrap, not the sample `admin`, and a long random password. Changing this variable later does not rename an existing account and may create another administrator. Existing accounts are deliberately left unchanged by this patch.
+
+After publishing, request `/api/health` and inspect Worker logs for `auth_client_ip_status` with `status: cloudflare` and `usable: true`. No visitor IP is logged. This observes that request path, not a guarantee for every proxy/client. Missing/invalid headers or Cloudflare's shared Worker address produce a warning and public login/registration return 503; do not restore a global `local` bucket or trust client-supplied forwarded headers to hide the problem. Repair the platform's trusted IP forwarding or roll back the release. See [Cloudflare's header semantics](https://developers.cloudflare.com/fundamentals/reference/http-headers/). Health still reports database readiness; the IP diagnostic is a separate operator check.
+
+Administrators retain pair/IP limits but not the ordinary account's cross-IP lockout. Password confirmations in an authenticated admin session have their own limit. This protects availability, not distributed password guessing; MFA/edge protection remain production gates. See [security](../SECURITY.md).
 
 1. Follow README setup and fill the blank values in `.env.local`. Never commit that file.
 2. Run `pnpm db:migrate:local`. It applies the committed SQL migrations in order to `.wrangler/state` using `wrangler.local.jsonc`. Repeat runs skip recorded migrations. It never passes `--remote`.

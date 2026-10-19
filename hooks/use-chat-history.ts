@@ -8,7 +8,6 @@ export function useChatHistory(ownerId: string | undefined, activeBookId: string
   const summaries = useRef<SummaryCache>({});
   const historyWrites = useRef<Promise<void>>(Promise.resolve());
   const exchangesRef = useRef<Exchange[]>([]);
-  exchangesRef.current = exchanges;
   function updateExchanges(next: Exchange[]) {
     exchangesRef.current = next;
     setExchanges(next);

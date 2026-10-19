@@ -31,7 +31,7 @@ hook.deregister();
 const originalFetch=globalThis.fetch;
 beforeEach(()=>{reset();globalThis.fetch=async()=>{throw new Error("External fetch forbidden in server tests");};});
 after(()=>{close();globalThis.fetch=originalFetch;});
-const request=(path,body={},method="POST",headers={})=>new Request(`https://voicebook.test/api/${path}`,{method,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify(body)});
+const request=(path,body={},method="POST",headers={})=>new Request(`https://voicebook.test/api/${path}`,{method,headers:{"Content-Type":"application/json","cf-connecting-ip":"203.0.113.1",...headers},body:JSON.stringify(body)});
 async function reader(name="reader"){const id=await auth.createUserAccount({username:name,password:"synthetic-reader-password"});return {userId:id,username:name,displayName:name,role:"user"};}
 async function login(name="reader") {const result=await auth.authenticate(name,name==="admin"?env.ADMIN_PASSWORD:"synthetic-reader-password");await auth.setSessionCookie(result.token,true);return result;}
 
@@ -75,11 +75,44 @@ test("login throttles a target across rotating IPs and password spraying across 
   for(let i=0;i<50;i++)await auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":"198.51.100.1"}),`name${i}`);
   await assert.rejects(auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":"198.51.100.1"}),"another"),{status:429});
 });
-test("concurrent login attempts admit at most ten per account; forwarded headers cannot rotate local IP",async()=>{
+test("concurrent login attempts admit at most ten per account; forwarded headers cannot rotate trusted IP",async()=>{
   const outcomes=await Promise.allSettled(Array.from({length:20},(_,i)=>auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":`192.0.2.${i}`}),"target")));
   assert.equal(outcomes.filter(r=>r.status==="fulfilled").length,10);
   for(let i=0;i<50;i++)await auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"x-forwarded-for":`198.51.100.${i}`}),`name${i}`);
   await assert.rejects(auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"x-forwarded-for":"198.51.100.100"}),"newname"),{status:429});
+});
+test("admin login survives cross-IP account attacks and session reauthentication has a separate budget",async()=>{
+  await auth.ensureBootstrapAdmin();
+  const user=await reader();
+  for(let i=0;i<20;i++){
+    const result=await routes["auth/login"].POST(request("auth/login",{username:"admin",password:"wrong"},"POST",{"cf-connecting-ip":`192.0.2.${i}`}));
+    assert.equal(result.status,401);
+  }
+  const legitimate=await routes["auth/login"].POST(request("auth/login",{username:"admin",password:env.ADMIN_PASSWORD},"POST",{"cf-connecting-ip":"198.51.100.99"}));
+  assert.equal(legitimate.status,200);
+  for(let i=0;i<10;i++)await auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":"198.51.100.7"}),"admin");
+  await assert.rejects(auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":"198.51.100.7"}),"admin"),{status:429});
+  const action=await routes["admin/users"].PUT(request("admin/users",{userId:user.userId,action:"set-active",active:false,adminPassword:env.ADMIN_PASSWORD},"PUT",{"cf-connecting-ip":"198.51.100.7"}));
+  assert.equal(action.status,200,"public login exhaustion must not block an authenticated administrator");
+  const admin=await auth.getAuthenticatedUser();
+  for(let i=0;i<10;i++)await auth.enforceReauthenticationRateLimit(admin.userId);
+  await assert.rejects(auth.enforceReauthenticationRateLimit(admin.userId),{status:429});
+  await login("admin");
+  await auth.enforceReauthenticationRateLimit(admin.userId);
+});
+test("production missing/invalid/shared IP fails explicitly without creating a global local bucket",async()=>{
+  const original=console.warn,messages=[];console.warn=message=>messages.push(message);
+  try {
+    for(const ip of ["", "not-an-ip", "2a06:98c0:3600::103"]){
+      await assert.rejects(auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":ip,"x-forwarded-for":"192.0.2.9"}),"reader"),{status:503});
+    }
+    assert.equal(database.prepare("SELECT COUNT(*) AS n FROM auth_login_attempts").get().n,0);
+    assert.ok(messages.some(m=>m.includes('"event":"auth_client_ip_status"')));
+    assert.ok(messages.every(m=>!m.includes("192.0.2.9")&&!m.includes("not-an-ip")));
+    const local=new Request("http://localhost:5173/api/auth/login");
+    for(let i=0;i<10;i++)await auth.enforceLoginRateLimit(local,"local-reader");
+    await assert.rejects(auth.enforceLoginRateLimit(local,"local-reader"),{status:429});
+  } finally {console.warn=original;}
 });
 test("unknown, wrong-password and disabled accounts all execute one PBKDF2 verification",async()=>{
   const user=await reader();await auth.ensureBootstrapAdmin();

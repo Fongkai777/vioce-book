@@ -6,9 +6,15 @@
 
 当前部署目标是 Sites 托管的 Cloudflare Workers，使用名为 `DB` 的 D1 绑定。`.openai/hosting.json` 指向现有站点，不应给无关 fork 复用其身份。GitHub 保存源码与检查工作流，**不托管网站、密钥或私人书库；push 不等于部署**。
 
-使用 Node.js 24 和 pnpm 11.25.0，执行 `pnpm install --frozen-lockfile`，不得悄悄改变锁文件。`pnpm check` 包含发布扫描、类型、离线测试和 Worker/客户端构建，不需要模型凭据。实际运行的模型调用另行配置。
+使用 Node.js 24 和 pnpm 11.25.0，执行 `pnpm install --frozen-lockfile`，不得悄悄改变锁文件。`pnpm check` 包含发布扫描、类型、lint（零警告）、离线测试和 Worker/客户端构建，不需要模型凭据。实际运行的模型调用另行配置。
 
 ## 首次本地启动
+
+首次初始化前，应选择非公开的 `ADMIN_USERNAME`，不要沿用示例 admin，并设置长随机密码。之后改变量不会重命名旧账号，可能创建另一个管理员；本次修改不会自动改动现有账号。
+
+发布后请求 `/api/health`，检查 Worker 日志中的 `auth_client_ip_status` 是否为 `status: cloudflare`、`usable: true`，日志不记录真实 IP。这只证明被测请求链路可用，不代表所有代理/客户端。线上头缺失、无效或为 Cloudflare Worker 共享地址时，会告警且登录/注册返回 503；应修复平台可信 IP 转发或回滚，不能用全站 local 桶或信任客户端转发头掩盖问题。参见 [Cloudflare 请求头语义](https://developers.cloudflare.com/fundamentals/reference/http-headers/)。health 响应仍代表数据库就绪，IP 日志是独立运维检查。
+
+管理员仍受 IP/组合限流，但不受普通账号跨 IP 锁定；已登录管理员的二次验密单独计数。这提升可用性，但不防分布式猜密码，全面开放仍需 MFA/边缘防护。
 
 1. 按 README 复制空模板为 `.env.local` 并配置，仅本地保留，不提交。
 2. 执行 `pnpm db:migrate:local`，按 `wrangler.local.jsonc` 将已提交 SQL 迁移应用到 `.wrangler/state`；重复执行跳过已记录迁移，不使用 `--remote`。

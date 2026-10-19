@@ -1,7 +1,9 @@
 import { getOpenAIConfig } from "@/lib/openai";
 import { env } from "cloudflare:workers";
+import { inspectAuthClientIp } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request?: Request) {
+  if (request) inspectAuthClientIp(request); // Logs status only, never the visitor IP.
   try {
     const config = getOpenAIConfig();
     if (!env.DB) throw new Error("Database is unavailable");

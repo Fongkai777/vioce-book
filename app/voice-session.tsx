@@ -7,7 +7,8 @@ export default function VoiceSession({ active, connecting, level, state, muted, 
   onMute: () => void; onFinish: () => void; onEnd: () => void;
 }) {
   const [levels, setLevels] = useState<number[]>(Array(28).fill(0));
-  const currentLevel = useRef(level); currentLevel.current = level;
+  const currentLevel = useRef(level);
+  useEffect(() => { currentLevel.current = level; }, [level]);
   useEffect(() => {
     if (!active) { setLevels(Array(28).fill(0)); return; }
     const timer = setInterval(() => setLevels(old => [...old.slice(1), currentLevel.current]), 70);

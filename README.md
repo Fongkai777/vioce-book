@@ -32,6 +32,8 @@ pnpm dev
 
 Open the printed URL. Microphones require localhost or HTTPS. Bootstrap credentials create the administrator only when it does not exist; changing an environment variable does not reset an existing password. Never put secrets in public files or NEXT_PUBLIC_* variables.
 
+Before first deployment, replace the example `ADMIN_USERNAME=admin` with an unpublished name and use a long random password. Changing that variable later is **not** an account rename and can create another bootstrap administrator. See [login protections](SECURITY.md) and [lint policy](docs/LINT.md).
+
 ```bash
 pnpm check           # release boundaries, types, offline tests, production build
 pnpm audit           # full dependency audit, no advisory exceptions

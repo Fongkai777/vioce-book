@@ -12,14 +12,30 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "dist/**",
+    "vendor/**",
+    "public/pdf.worker.min.mjs", // Generated verbatim from the locked PDF.js package.
+    ".sites-runtime/**",
+    ".wrangler/**",
+    "outputs/**", // Ignored local evaluation artifacts, never release source.
   ]),
   {
-    files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
+    files: ["app/page.tsx"],
     rules: {
-      // These files are vendored verbatim from shadcn@4.17.0. Keep the
-      // registry source intact while applying the stricter rules to Site code.
-      "@typescript-eslint/no-unused-vars": "off",
-      "react-hooks/purity": "off",
+      // This non-Compiler component coordinates mutable AudioContext/turn/history
+      // handles returned by hooks. UI reads are paired with React state updates.
+      // Compiler alias analysis treats those intentional handles as immutable.
+      // See docs/LINT.md; do not extend this exception to new components.
+      "react-hooks/immutability": "off",
+      "react-hooks/refs": "off",
+    },
+  },
+  {
+    files: ["app/admin/feedback-list.tsx", "app/admin/operations-panel.tsx", "app/book-manager.tsx", "app/login/page.tsx", "app/pdf-preview.tsx", "app/sample-library.tsx", "app/voice-session.tsx", "hooks/use-local-library.ts"],
+    rules: {
+      // These effects reset loading/selection/waveform state when external
+      // resources change. Keep their cancellation guards and exhaustive deps;
+      // don't defer setters just to make the rule stop detecting them.
       "react-hooks/set-state-in-effect": "off",
     },
   },

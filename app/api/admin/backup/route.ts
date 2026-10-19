@@ -4,7 +4,7 @@ import { boundedRequest } from "@/lib/bounded-request";
 import { ApiError, apiErrorResponse } from "@/lib/errors";
 import { encryptBackup, decryptBackup } from "@/lib/backup-crypto";
 import { exportServerSnapshot, restoreServerSnapshot } from "@/lib/server-backup";
-import { enforceLoginRateLimit, clearLoginRateLimit, verifyCurrentPassword } from "@/lib/auth";
+import { enforceReauthenticationRateLimit, clearLoginRateLimit, verifyCurrentPassword } from "@/lib/auth";
 import { auditOperation } from "@/lib/operations";
 
 export async function POST(request: Request) {
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const body = await (await boundedRequest(request, 4096)).json() as { passphrase?: unknown; password?: unknown };
     if (typeof body?.passphrase !== "string" || body.passphrase.length < 12 || body.passphrase.length > 256) throw new ApiError("Use a backup passphrase of 12–256 characters.", 400);
     if (typeof body.password !== "string" || !body.password || body.password.length > 128) throw new ApiError("Enter your current administrator password.", 400);
-    const rateKey = await enforceLoginRateLimit(request, user.username);
+    const rateKey = await enforceReauthenticationRateLimit(user.userId);
     if (!await verifyCurrentPassword(user.userId, body.password)) throw new ApiError("Invalid administrator password", 401);
     const encrypted = await encryptBackup(await exportServerSnapshot(), body.passphrase);
     await auditOperation(user.userId, "Encrypted server backup downloaded");
@@ -27,7 +27,7 @@ export async function PUT(request: Request) {
     const body = await (await boundedRequest(request, 7_000_000)).json() as { confirmation?: unknown; password?: unknown; passphrase?: unknown; backup?: unknown };
     if (body?.confirmation !== "RESTORE SERVER DATA" || typeof body.password !== "string" || body.password.length > 128 ||
       typeof body.passphrase !== "string" || body.passphrase.length < 12 || body.passphrase.length > 256) throw new ApiError("Confirm restore with your current password and backup passphrase.", 400);
-    const rateKey = await enforceLoginRateLimit(request, user.username);
+    const rateKey = await enforceReauthenticationRateLimit(user.userId);
     if (!await verifyCurrentPassword(user.userId, body.password)) throw new ApiError("Invalid administrator password", 401);
     let snapshot;
     try { snapshot = await decryptBackup(body.backup, body.passphrase, 6_000_000); }

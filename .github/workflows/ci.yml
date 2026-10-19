@@ -36,6 +36,8 @@ jobs:
         run: pnpm check:release
       - name: Type check
         run: pnpm typecheck
+      - name: Lint application and tests
+        run: pnpm lint
       - name: Unit and server integration tests (no external AI calls)
         run: pnpm test
       - name: Build Worker and client

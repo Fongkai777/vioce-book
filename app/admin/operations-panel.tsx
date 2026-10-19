@@ -79,8 +79,8 @@ export default function OperationsPanel() {
     <p className="inspector-note">Usage-priced: ${((data?.settledMicros || 0) / 1_000_000).toFixed(4)} · Estimates / pending: ${((data?.estimatedMicros || 0) / 1_000_000).toFixed(4)} · Legacy / restored estimates: ${((data?.legacyMicros || 0) / 1_000_000).toFixed(4)}</p>
     {Boolean(data?.legacyMicros) && <div className="backup-panel">
       <p>One-time correction for {data?.date}: remove ${(Number(data?.legacyMicros) / 1_000_000).toFixed(6)} of legacy estimates only. This restores application budget, not provider credit. New token-priced costs and pending estimates remain.</p>
-      <label className="operations-checkbox"><input type="checkbox" checked={confirmLegacy} onChange={e => setConfirmLegacy(e.target.checked)} disabled={busy} /> I confirm clearing only today's legacy estimates</label>
-      <button className="refresh-button" disabled={busy || !confirmLegacy} onClick={() => void run(clearLegacy)}>Clear today's legacy estimates</button>
+      <label className="operations-checkbox"><input type="checkbox" checked={confirmLegacy} onChange={e => setConfirmLegacy(e.target.checked)} disabled={busy} /> I confirm clearing only today&apos;s legacy estimates</label>
+      <button className="refresh-button" disabled={busy || !confirmLegacy} onClick={() => void run(clearLegacy)}>Clear today&apos;s legacy estimates</button>
     </div>}
     <p className="inspector-note">Known models reserve an estimate, then reconcile against validated provider token usage when available. MP3 speech, missing usage and failed requests keep estimates; old records cannot be repriced without usage. This is not a provider invoice. Resets at midnight Singapore time. Keep a separate provider spending limit.</p>
     <details className="backup-panel"><summary>Token usage & cost by model</summary>

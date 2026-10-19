@@ -1,3 +1,5 @@
+import { buildBM25Index, restoreBM25Index } from "./retrieval.mjs";
+
 export type StoredChunk = {
   id: string;
   sectionTitle: string;
@@ -125,6 +127,25 @@ export async function getBook(ownerId: string, bookId: string) {
     ]);
     if (!metadata) return undefined;
     if (!content) throw new Error("This book's saved index is missing. Import it again.");
+    if (!await restoreBM25Index(content.index, content.bm25)) {
+      const bm25 = await buildBM25Index(content.index);
+      // Cache-only lazy migration. Do not overwrite newer content or resurrect a
+      // book deleted in another tab while hashing/building statistics.
+      try {
+        const write = database.transaction(CONTENT_STORE, "readwrite");
+        const completion = transactionDone(write);
+        const store = write.objectStore(CONTENT_STORE);
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const latest = request.result;
+          if (latest && latest.revision === content.revision) store.put({ ...latest, bm25 });
+        };
+        await completion;
+      } catch {
+        // A full disk may prevent caching, but the loaded book remains usable.
+        console.warn("BM25 cache could not be saved; using in-memory statistics.");
+      }
+    }
     // Opening a conversation does not read the original PDF blob.
     return { ...metadata, index: content.index, fullText: content.fullText } as StoredBook;
   } finally {
@@ -133,12 +154,13 @@ export async function getBook(ownerId: string, bookId: string) {
 }
 
 export async function saveBook(ownerId: string, book: Omit<StoredBook, "ownerId" | "storageKey">) {
+  const bm25 = await buildBM25Index(book.index);
   const database = await openLibrary();
   try {
     const transaction = database.transaction([BOOK_STORE, CONTENT_STORE, PDF_STORE], "readwrite");
     const storageKey = `${ownerId}:${book.id}`;
     transaction.objectStore(BOOK_STORE).put({ ...summary(book), ownerId, storageKey });
-    transaction.objectStore(CONTENT_STORE).put({ storageKey, index: book.index, fullText: book.fullText });
+    transaction.objectStore(CONTENT_STORE).put({ storageKey, index: book.index, fullText: book.fullText, bm25, revision: crypto.randomUUID() });
     if (book.pdf) transaction.objectStore(PDF_STORE).put({ storageKey, pdf: book.pdf });
     await transactionDone(transaction);
   } finally {
@@ -180,6 +202,7 @@ export async function markBookOpened(ownerId: string, bookId: string) {
 // an account's existing book or index. Account identity always comes from the caller.
 export async function saveBookIfMissing(ownerId: string, book: Omit<StoredBook, "ownerId" | "storageKey">) {
   if (!ownerId) throw new Error("Sign in before saving a book.");
+  const bm25 = await buildBM25Index(book.index);
   const database = await openLibrary();
   try {
     const transaction = database.transaction([BOOK_STORE, CONTENT_STORE, PDF_STORE], "readwrite");
@@ -191,7 +214,7 @@ export async function saveBookIfMissing(ownerId: string, book: Omit<StoredBook, 
     request.onsuccess = () => {
       if (request.result) return;
       store.add({ ...summary(book), ownerId, storageKey });
-      transaction.objectStore(CONTENT_STORE).add({ storageKey, index: book.index, fullText: book.fullText });
+      transaction.objectStore(CONTENT_STORE).add({ storageKey, index: book.index, fullText: book.fullText, bm25, revision: crypto.randomUUID() });
       if (book.pdf) transaction.objectStore(PDF_STORE).add({ storageKey, pdf: book.pdf });
       added = true;
     };

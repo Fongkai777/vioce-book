@@ -46,7 +46,7 @@ if (process.argv.includes("--with-sample-model")) {
   const vector = query.data.embeddings[0];
   const ranked = sample.data.books[0].index.map(chunk => ({ chunk, score: chunk.embedding.reduce((sum, value, i) => sum + value * vector[i], 0) })).sort((a,b) => b.score - a.score);
   assert.match(ranked[0].chunk.sectionTitle, /notes/i);
-  const result = await call("/api/answer", reader, "POST", { question, contexts: ranked.slice(0, 3).map(({chunk: {embedding, ...chunk}}) => chunk) });
+  const result = await call("/api/answer", reader, "POST", { question, contexts: ranked.slice(0, 3).map(({chunk: {embedding, ...chunk}}) => { void embedding; return chunk; }) });
   assert.equal(result.response.status, 200, result.data.error);
   assert.match(result.data.answer, /\[S\d+\]/);
   assert.match(result.data.answer, /claim/i);

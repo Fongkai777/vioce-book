@@ -25,7 +25,7 @@ export default function PdfPreview({ file, initialPage = 1 }: { file: Blob; init
       if (cancelled) return;
       task = pdfjs.getDocument({ data });
       const loaded = await task.promise;
-      if (!cancelled) { setDocument(loaded); setPage(Math.max(1, Math.min(initialPage, loaded.numPages))); }
+      if (!cancelled) setDocument(loaded); // The document/initialPage effect clamps the page.
     })().catch(() => { if (!cancelled) setError("This PDF could not be previewed. It may be damaged or password-protected. Your saved chunks and index are still available."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; void task?.destroy().catch(() => {}); };

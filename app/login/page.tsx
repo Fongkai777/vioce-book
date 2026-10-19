@@ -60,7 +60,7 @@ export default function LoginPage() {
       {registering && <div className="registration-status" role="status">
         <strong>{statusError ? "Registration availability could not be loaded." : places === null ? "Checking availability…" : `${places} of 2 places left today`}</strong>
         <p>Two self-created accounts per day across the whole site. Resets at midnight Singapore time (UTC+8). Administrator-created accounts are separate.</p>
-        <p>Includes up to 20 questions and 10 minutes of voice input daily, subject to the site's shared AI budget.</p>
+        <p>Includes up to 20 questions and 10 minutes of voice input daily, subject to the site&apos;s shared AI budget.</p>
         {statusError && <button type="button" className="login-switch" onClick={() => void refreshPlaces()}>Check again</button>}
       </div>}
       <form onSubmit={(event) => void submit(event)}>

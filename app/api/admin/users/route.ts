@@ -1,6 +1,6 @@
 import { assertSameOrigin } from "@/lib/request-security";
 import { env } from "cloudflare:workers";
-import { createUserAccount, clearLoginRateLimit, enforceLoginRateLimit, hashPassword, verifyCurrentPassword } from "@/lib/auth";
+import { createUserAccount, clearLoginRateLimit, enforceReauthenticationRateLimit, hashPassword, verifyCurrentPassword } from "@/lib/auth";
 import { ApiError } from "@/lib/errors";
 import { monitoredRoute } from "@/lib/operations";
 import {
@@ -55,7 +55,7 @@ export const PUT = monitoredRoute("admin/users/security", async (request: Reques
   if (body.action === "reset-password" && (typeof body.newPassword !== "string" || body.newPassword.length < 10 || body.newPassword.length > 128)) {
     throw new ApiError("Password must be 10-128 characters", 400);
   }
-  const attemptKeys = await enforceLoginRateLimit(request, admin.username);
+  const attemptKeys = await enforceReauthenticationRateLimit(admin.userId);
   if (!await verifyCurrentPassword(admin.userId, body.adminPassword)) throw new ApiError("Administrator password is incorrect", 401);
   await clearLoginRateLimit(attemptKeys);
   const target = await db().prepare("SELECT role FROM app_users WHERE user_id=?").bind(body.userId).first<{role: string}>();

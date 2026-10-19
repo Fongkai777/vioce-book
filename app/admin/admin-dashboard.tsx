@@ -128,7 +128,7 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
 
   return <main className="admin-shell">
     <header className="admin-header">
-      {/* Use a full-page navigation: the deployed router's client transition fails here. */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Full navigation works around the verified deployed Vinext client-router failure. */}
       <a href="/" className="admin-back"><ArrowLeft size={16} /> Back to Voicebook</a>
       <div className="admin-identity"><ShieldCheck size={17} /><span>Administrator</span><small>{adminUsername}</small></div>
     </header>

@@ -57,6 +57,8 @@ This is preferable to slicing the entire book every N characters because heading
 
 Dense similarity helps when the question paraphrases the book. BM25 helps exact names, codes, quotations, and rare terminology. Each ranking is fused with reciprocal-rank fusion, so neither score needs brittle manual normalization.
 
+BM25 term frequencies, document frequencies and lengths persist in the account-scoped IndexedDB `book-content` record, not lightweight library metadata. A version plus SHA-256 of ordered chunk IDs/titles/text invalidates stale statistics; this is cache integrity, not proof of book provenance. Opening a book restores maps without retokenizing passages. Old/malformed caches rebuild locally once without PDF parsing, embedding or network calls. A revision-checked write prevents lazy upgrades from overwriting a newer save or resurrecting a deleted book. If that optional cache write fails, the in-memory statistics still work and a later open can retry. Deleting the book deletes its cache; local backup restore can regenerate this derived data.
+
 ### Diversity selection
 
 The highest fused candidates are filtered with a lexical redundancy penalty. This prevents the final context window from being filled with near-identical overlapping passages.

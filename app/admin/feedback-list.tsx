@@ -16,7 +16,7 @@ export default function FeedbackList() {
     } catch (e) { setError(e instanceof Error ? e.message : "Could not load feedback."); } finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
-  return <section className="admin-feedback"><div className="admin-title-row"><div><p className="eyebrow">Reader feedback</p><h2>Reader feedback</h2><p>The latest 100 submitted reviews. Readers' local conversation histories are not included.</p></div><button className="refresh-button" disabled={loading} onClick={() => void load()}>Refresh feedback</button></div>
+  return <section className="admin-feedback"><div className="admin-title-row"><div><p className="eyebrow">Reader feedback</p><h2>Reader feedback</h2><p>The latest 100 submitted reviews. Readers&apos; local conversation histories are not included.</p></div><button className="refresh-button" disabled={loading} onClick={() => void load()}>Refresh feedback</button></div>
     {error && <p role="alert">{error}</p>}
     {!items.length && <p>{loading ? "Loading…" : "No feedback yet."}</p>}
     {items.map(item => <article className="admin-feedback-card" key={`${item.user_id}:${item.exchange_id}`}><div><strong>{item.rating === "helpful" ? "Helpful" : "Needs improvement"} · {item.display_name}</strong><small>{item.book_name} · {new Date(item.updated_at).toLocaleString()}</small></div><p>{item.question}</p><div className="feedback-tags">{(JSON.parse(item.tags) as string[]).map(tag => <span key={tag}>{feedbackTagLabels[tag] || tag}</span>)}</div>{item.comment && <blockquote>{item.comment}</blockquote>}<details><summary>View the submitted answer</summary><p>{item.answer}</p></details></article>)}
