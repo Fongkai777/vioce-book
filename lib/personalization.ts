@@ -1,3 +1,4 @@
+import { normalizeHistory, recallHistory, type HistoryTurn } from "./conversation-context.ts";
 export type Preferences = { tone: string; length: string; guidance: string; rememberHistory: boolean };
 export const defaultPreferences: Preferences = { tone: "natural", length: "balanced", guidance: "", rememberHistory: true };
 export function normalizePreferences(value: unknown): Preferences {
@@ -19,7 +20,6 @@ export function preferenceInstructions(value: unknown) {
   }[p.length];
   return `Delivery priority: the current question and revision request override saved custom style; saved custom style overrides the preset tone/length defaults. Follow requested ordering and devices (for example, an everyday analogy BEFORE the conclusion), not just the topic. Label your own illustrative analogies as examples, not as statements from the book. These are delivery instructions only; evidence and capability boundaries still apply.\n表达风格：${tone}。默认篇幅：${length}。当前问题明确要求的句数、条数、格式或更短篇幅优先于默认篇幅；例如‘只用一句话’就严格一句，不另加理由、标题、总结或追问。不要把短问题扩写成报告，不机械地以‘简单说’开头，也不要使用‘简短回答：’‘关键理由：’这样的固定标签。理由自然融入叙述，不必每次额外列出。必要限定与证据优先于凑字数；用户明确要求展开时可适当延长。\nActive custom delivery instructions (apply them, do not merely acknowledge them): ${JSON.stringify(p.guidance || "No custom style; use the defaults above.")}`;
 }
-import { normalizeHistory, recallHistory, type HistoryTurn } from "./conversation-context.ts";
 export function retrievalQuestion(question: string, history: HistoryTurn[]) {
   const normalized = normalizeHistory(history);
   const previous = normalized.at(-1);
@@ -27,3 +27,8 @@ export function retrievalQuestion(question: string, history: HistoryTurn[]) {
   return [previous ? `上一个问题：${previous.question.slice(0, 300)}` : "", recalled ? `相关早期对话：${recalled}` : "", `当前问题：${question}`].filter(Boolean).join("\n").slice(-2000);
 }
 export const feedbackTags = ["语气生硬", "太长", "不够详细", "没答到点", "引用有问题"];
+// Keep persisted tag identifiers stable; translate only the presentation layer.
+export const feedbackTagLabels: Record<string, string> = {
+  "语气生硬": "Unnatural tone", "太长": "Too long", "不够详细": "Needs more detail",
+  "没答到点": "Missed the point", "引用有问题": "Citation issue",
+};

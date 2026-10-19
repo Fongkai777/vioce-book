@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const tags = Array.isArray(b.tags) ? feedbackTags.filter(x => b.tags.includes(x)) : [];
     const count = await readerDatabase().prepare("SELECT COUNT(*) AS n FROM answer_feedback WHERE user_id=? AND updated_at >= ? AND exchange_id != ?")
       .bind(user.userId, new Date(Date.now() - 86400000).toISOString(), b.exchangeId).first<{ n: number }>();
-    if ((count?.n || 0) >= 100) return Response.json({ error: "今天提交的评价较多，请明天再试。" }, { status: 429 });
+    if ((count?.n || 0) >= 100) return Response.json({ error: "Today's feedback limit is reached. Please try again tomorrow." }, { status: 429 });
     await readerDatabase().prepare(`INSERT INTO answer_feedback (user_id, exchange_id, book_name, question, answer, rating, tags, comment, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, exchange_id) DO UPDATE SET
       rating=excluded.rating, tags=excluded.tags, comment=excluded.comment, updated_at=excluded.updated_at`)

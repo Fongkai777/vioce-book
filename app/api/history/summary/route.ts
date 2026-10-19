@@ -10,10 +10,10 @@ export const POST = aiRoute("history/summary", async (request: Request) => {
     assertSameOrigin(request);
     const user = await requireApiUser();
     const raw = await request.text();
-    if (bytes(raw) > SUMMARY_BATCH * 2) throw new ApiError("摘要请求过大", 413);
+    if (bytes(raw) > SUMMARY_BATCH * 2) throw new ApiError("Summary request too large.", 413);
     const body = JSON.parse(raw) as { text?: unknown };
-    if (typeof body.text !== "string" || !body.text.trim() || bytes(body.text) > SUMMARY_BATCH) throw new ApiError("摘要文本无效或过长", 400);
-    if ((await getQuotaSnapshot(user)).questions.remaining <= 0) throw new ApiError("今天的提问额度已用完", 429);
+    if (typeof body.text !== "string" || !body.text.trim() || bytes(body.text) > SUMMARY_BATCH) throw new ApiError("Summary text is invalid or too long.", 400);
+    if ((await getQuotaSnapshot(user)).questions.remaining <= 0) throw new ApiError("Today's question allowance is used up.", 429);
     // A separate bounded maintenance allowance; never consumes a question.
     const receipt = await consumeQuota(user, "historySummary", Math.max(1000, body.text.length));
     return await refundOnFailure(receipt, request.signal, async () => {
@@ -28,7 +28,7 @@ export const POST = aiRoute("history/summary", async (request: Request) => {
       if (!response.ok) throw await openAIError(response);
       const payload = await response.json() as Parameters<typeof responseText>[0] & { status?: string };
       const summary = responseText(payload);
-      if (!summary || bytes(summary) > SUMMARY_OUTPUT || payload.status === "incomplete") throw new ApiError("摘要未完成，请重试；原始聊天仍然保留。", 502);
+      if (!summary || bytes(summary) > SUMMARY_OUTPUT || payload.status === "incomplete") throw new ApiError("Summary incomplete. Please retry; original messages are still saved.", 502);
       return Response.json({ summary }, { headers: { "Cache-Control": "no-store" } });
     });
   } catch (error) { return apiErrorResponse(error instanceof SyntaxError ? new ApiError("Invalid JSON", 400) : error); }

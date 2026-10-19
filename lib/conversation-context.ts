@@ -73,19 +73,19 @@ export async function buildConversationContext(question: string, value: unknown,
       let summary = cache[key];
       if (!summary || bytes(summary) > SUMMARY_OUTPUT) {
         summary = await summarize(block);
-        if (!summary.trim() || bytes(summary) > SUMMARY_OUTPUT) throw new Error("对话摘要过长或为空，请重试；完整历史仍然保留。");
+        if (!summary.trim() || bytes(summary) > SUMMARY_OUTPUT) throw new Error("The conversation summary is empty or too long. Please retry; full history is still saved.");
         cache[key] = summary;
         await onCache?.();
       }
       outputs.push(summary);
     }
     const next = outputs.join("\n\n");
-    if (bytes(next) >= bytes(memory) && bytes(next) > SUMMARY_BUDGET) throw new Error("对话摘要未有效压缩，原始历史未被删除。");
+    if (bytes(next) >= bytes(memory) && bytes(next) > SUMMARY_BUDGET) throw new Error("The summary did not shorten the conversation enough. Original history has not been deleted.");
     memory = next; level += 1;
   } while (bytes(memory) > SUMMARY_BUDGET);
   const context: ConversationContext = { mode: "compressed", turns: history.slice(cut), summary: memory,
     recalled: recallHistory(question, early), totalTurns: history.length };
-  if (bytes(JSON.stringify(context)) > HISTORY_BUDGET) throw new Error("对话上下文超出预算，请缩小本次问题范围。");
+  if (bytes(JSON.stringify(context)) > HISTORY_BUDGET) throw new Error("Conversation context exceeds the limit. Please narrow your question.");
   return context;
 }
 export function validateContext(value: unknown): ConversationContext {

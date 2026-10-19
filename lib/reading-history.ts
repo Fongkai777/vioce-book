@@ -10,14 +10,14 @@ function openHistory() {
     request.onupgradeneeded = () => request.result.createObjectStore("conversations", { keyPath: "key" }).createIndex("userId", "userId");
     request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
     request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error("请关闭其他 Voicebook 标签页后重试。"));
+    request.onblocked = () => reject(new Error("Close other Voicebook tabs and try again."));
   });
 }
 function result<T>(request: IDBRequest<T>) {
   return new Promise<T>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
 }
 function done(tx: IDBTransaction) {
-  return new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = tx.onerror = () => reject(tx.error || new Error("对话保存失败")); });
+  return new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = tx.onerror = () => reject(tx.error || new Error("Could not save the conversation.")); });
 }
 async function update(userId: string, bookId: string, turns: Turn[], summaries: SummaryCache = {}, insertOnly = false) {
   const db = await openHistory();
@@ -40,7 +40,7 @@ async function migrate(userId: string, bookId: string) {
   const raw = localStorage.getItem(legacyKey);
   if (!raw) return;
   const turns = JSON.parse(raw);
-  if (!Array.isArray(turns) || !turns.every(turn => turn && typeof turn.question === "string" && typeof turn.answer === "string")) throw new Error("旧版聊天记录格式异常，原数据已保留。");
+  if (!Array.isArray(turns) || !turns.every(turn => turn && typeof turn.question === "string" && typeof turn.answer === "string")) throw new Error("Legacy chat data is invalid. The original data has been kept.");
   await update(userId, bookId, turns.map((turn, index) => ({ ...turn, id: turn.id || `legacy-${index}` })));
   localStorage.removeItem(legacyKey);
 }

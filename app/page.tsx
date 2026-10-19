@@ -13,7 +13,7 @@ import {
 import { buildStructuralChunks, hybridRetrieve } from "@/lib/retrieval.mjs";
 import { formatQuotaDuration } from "@/lib/quota-display";
 import { defaultPreferences, retrievalQuestion, type Preferences } from "@/lib/personalization";
-import { clearHistory, loadHistory, loadSummaries, saveHistory, type SummaryCache } from "@/lib/reading-history";
+import { clearHistory, loadHistory, loadSummaries } from "@/lib/reading-history";
 import { buildConversationContext } from "@/lib/conversation-context";
 import { AnswerFeedback, ReaderSettings } from "./reader-controls";
 import StartReading from "./start-reading";
@@ -23,17 +23,21 @@ import BookManager from "./book-manager";
 import type { PassageTarget } from "@/lib/book-inspector";
 import VoiceSession from "./voice-session";
 import { VoiceCapture } from "@/lib/voice-capture";
-import { speechSegments, TurnGate } from "@/lib/voice-turn";
+import { TurnGate } from "@/lib/voice-turn";
 import { normalizeCitations, stripCitations } from "@/lib/citations";
 import { VoiceDraft } from "@/lib/voice-draft";
 import { VoiceInputGate } from "@/lib/voice-input-gate";
-import { PausableAudio } from "@/lib/pausable-audio";
 import { beginReply, settleReply, recoverReplies, updateVoiceMessage, leaveUnsent, type Exchange } from "@/lib/chat-turns";
 import ReplyProgress from "./reply-progress";
 import QuestionMessage from "./question-message";
+import { extractPages, embedBookTexts } from "@/lib/book-processing";
+import { useReplyAudio } from "@/hooks/use-reply-audio";
+import { useChatHistory } from "@/hooks/use-chat-history";
+import { useLocalLibrary } from "@/hooks/use-local-library";
+import { releaseAudioContext } from "@/lib/audio-context";
 import { RetrievalRetryCache } from "@/lib/retrieval-retry";
 
-type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "reviewing" | "voicing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
+import type { Stage } from "@/lib/reader-stage";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
 type Source = Pick<Chunk, "id" | "sectionTitle" | "pageStart" | "pageEnd" | "text">;
 type QuotaSnapshot = {
@@ -49,7 +53,7 @@ const stageCopy: Record<Stage, string> = {
   listening: "Listening… pause to finish", transcribing: "Turning speech into text…",
   reviewing: "Review your transcript", voicing: "Preparing the spoken reply…",
   retrieving: "Finding the best passages…", answering: "Composing a grounded answer…",
-  remembering: "整理较早对话，保留完整原始记录…",
+  remembering: "Summarizing earlier conversation; keeping the originals…",
   speaking: "Playing the answer", error: "Something needs attention",
 };
 
@@ -70,14 +74,11 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
   const [book, setBook] = useState<BookSummary | null>(null);
-  const [library, setLibrary] = useState<BookSummary[]>([]);
-  const [libraryReady, setLibraryReady] = useState(false);
   const [openingBookId, setOpeningBookId] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [sampleLibraryOpen, setSampleLibraryOpen] = useState(false);
   const [sampleError, setSampleError] = useState("");
   const [chunks, setChunks] = useState<Chunk[]>([]);
-  const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [error, setError] = useState("");
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [passageTarget, setPassageTarget] = useState<PassageTarget>();
@@ -89,18 +90,14 @@ export default function Home() {
   const [transcript, setTranscript] = useState("");
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
-  const [replayAvailable, setReplayAvailable] = useState(false);
   const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
   const [preferencesReady, setPreferencesReady] = useState(false);
-  const summaries = useRef<SummaryCache>({});
+  const { library, setLibrary, libraryReady } = useLocalLibrary(quota?.user.userId, setError);
   const retrievalRetries = useRef(new RetrievalRetryCache<Chunk[]>());
   const [contextNote, setContextNote] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
-  const audioContext = useRef<AudioContext | null>(null);
-  const audioPlayer = useRef<AudioBufferSourceNode | null>(null);
-  const audioPlayback = useRef<PausableAudio | null>(null);
   const capture = useRef<VoiceCapture | null>(null);
   const turnGate = useRef(new TurnGate());
   const transcriptionGate = useRef(new TurnGate());
@@ -111,12 +108,9 @@ export default function Home() {
   const draft = useRef(new VoiceDraft());
   const draftExchange = useRef<string | null>(null);
   const pendingReply = useRef<string | null>(null);
-  const historyWrites = useRef<Promise<void>>(Promise.resolve());
-  const replay = useRef<{ buffers: AudioBuffer[]; exchangeId: string } | null>(null);
-  const playingExchange = useRef<string | null>(null);
-  const exchangesRef = useRef<Exchange[]>([]);
-  exchangesRef.current = exchanges;
   const actions = useRef({ speechStart: () => {}, utterance: (_file: File, _seconds: number) => {}, stopped: (_reason: string) => {}, sendTranscript: () => {} });
+  const { exchanges, exchangesRef, summaries, historyWrites, updateExchanges, persistExchanges } = useChatHistory(quota?.user.userId, book?.id, preferences.rememberHistory, setVoiceNotice);
+  const { replayAvailable, setReplayAvailable, audioContext, audioPlayer, audioPlayback, replay, playingExchange, prepareAudio, speak, stopAudio, replayAudio } = useReplyAudio({ voiceInputGate, turnGate, setStage, setVoiceNotice, onInterrupt: interruptReply });
   const conversationEnd = useRef<HTMLDivElement>(null);
 
   const busy = !["idle", "ready", "error", "listening", "reviewing", "speaking"].includes(stage);
@@ -128,7 +122,7 @@ export default function Home() {
   useEffect(() => () => {
     retrievalRetries.current.clear();
     voiceGeneration.current++; turnGate.current.cancel(); transcriptionGate.current.cancel(); capture.current?.stop();
-    void audioContext.current?.close();
+    releaseAudioContext(audioContext);
   }, []);
   useEffect(() => {
     const leave = () => { if (document.hidden) actions.current.stopped("Voice mode ended because this tab is no longer visible."); };
@@ -151,30 +145,22 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const ownerId = quota?.user.userId;
     retrievalRetries.current.clear();
-    if (!ownerId) return;
-    let cancelled = false;
-    void listBooks(ownerId)
-      .then((books) => { if (!cancelled) setLibrary(books); })
-      .catch(() => { if (!cancelled) setError("Your local book library could not be opened."); })
-      .finally(() => { if (!cancelled) setLibraryReady(true); });
-    return () => { cancelled = true; };
   }, [quota?.user.userId]);
 
   useEffect(() => {
     if (!quota?.user.userId) return;
     void fetch("/api/preferences", { cache: "no-store" }).then(async response => {
       const data = await response.json() as { preferences: Preferences; error?: string };
-      if (!response.ok) throw new Error(data.error || "偏好读取失败");
+      if (!response.ok) throw new Error(data.error || "Could not load preferences.");
       setPreferences(data.preferences);
       if (!data.preferences.rememberHistory) await clearHistory(quota.user.userId);
       setPreferencesReady(true);
-    }).catch(() => setError("阅读偏好暂时无法加载，请刷新后重试。"));
+    }).catch(() => setError("Reading preferences are unavailable. Please refresh and try again."));
   }, [quota?.user.userId]);
 
   async function clearReadingHistory() {
-    if (!quota || !window.confirm("清空这个账号在本机保存的全部对话？书籍和索引不受影响。")) return;
+    if (!quota || !window.confirm("Clear all conversations saved for this account on this device? Books and indexes will be kept.")) return;
     interruptReply();
     retrievalRetries.current.clear();
     await historyWrites.current;
@@ -184,7 +170,7 @@ export default function Home() {
   async function savePreferences(next: Preferences) {
     const response = await fetch("/api/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
     const data = await response.json() as { preferences: Preferences; error?: string };
-    if (!response.ok) throw new Error(data.error || "偏好保存失败");
+    if (!response.ok) throw new Error(data.error || "Could not save preferences.");
     setPreferences(data.preferences);
     if (!data.preferences.rememberHistory && quota) { await historyWrites.current; await clearHistory(quota.user.userId); }
     if (data.preferences.rememberHistory && quota && book) await persistExchanges(exchangesRef.current, quota.user.userId, book.id, true);
@@ -196,77 +182,9 @@ export default function Home() {
     "What evidence does the author rely on?",
   ] : [], [book]);
 
-  async function extractPages(file: File) {
-    const pdfjs = await import("pdfjs-dist");
-    pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-    const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
-    try {
-      const document = await loadingTask.promise;
-      const pages: Array<{ pageNumber: number; text: string }> = [];
-      let ocrPages = 0;
-      const metadata = await document.getMetadata().catch(() => null);
-      const pdfAuthor = (metadata?.info as { Author?: unknown } | undefined)?.Author;
-      const author = typeof pdfAuthor === "string" ? pdfAuthor.trim().slice(0, 300) || undefined : undefined;
-      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-        const page = await document.getPage(pageNumber);
-        const content = await page.getTextContent();
-        let text = "";
-        for (const item of content.items) {
-          if (!("str" in item)) continue;
-          text += item.str;
-          text += item.hasEOL ? "\n" : " ";
-        }
-        text = text.replace(/[ \t]+/g, " ").trim();
-        if (text.length < 20) {
-          ocrPages++;
-          const baseViewport = page.getViewport({ scale: 1 });
-          const scale = Math.min(2.2, 1800 / Math.max(baseViewport.width, baseViewport.height));
-          const viewport = page.getViewport({ scale });
-          const canvas = window.document.createElement("canvas");
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
-          const canvasContext = canvas.getContext("2d", { alpha: false });
-          if (!canvasContext) throw new Error(`Could not render page ${pageNumber} for OCR.`);
-          await page.render({ canvas, canvasContext, viewport }).promise;
-          const image = canvas.toDataURL("image/jpeg", 0.86);
-          canvas.width = 1;
-          canvas.height = 1;
-          const response = await fetch("/api/ocr", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image, pageNumber }),
-          });
-          const payload = (await response.json()) as { error?: string; text?: string };
-          if (!response.ok) throw new Error(payload.error || `OCR failed on page ${pageNumber}`);
-          text = String(payload.text || "").trim();
-        }
-        pages.push({ pageNumber, text });
-        page.cleanup();
-        setProgress(Math.round((pageNumber / document.numPages) * 42));
-      }
-      return { pages, totalPages: document.numPages, author, ocrPages };
-    } finally {
-      // PDF.js 6 owns document/worker cleanup on the loading task, including errors.
-      await loadingTask.destroy();
-    }
-  }
 
-  async function embedTexts(texts: string[], model = "text-embedding-3-small", purpose = "index", signal?: AbortSignal) {
-    const vectors: number[][] = [];
-    const batchSize = 48;
-    for (let index = 0; index < texts.length; index += batchSize) {
-      const response = await fetch("/api/embed", {
-        method: "POST", signal, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texts: texts.slice(index, index + batchSize), model, purpose }),
-      });
-      const payload = await response.json() as { error?: string; embeddings: number[][] };
-      signal?.throwIfAborted();
-      if (!response.ok) throw new Error(payload.error || "Embedding failed");
-      vectors.push(...payload.embeddings);
-      setProgress(45 + Math.round((Math.min(index + batchSize, texts.length) / texts.length) * 55));
-    }
-    return vectors;
-  }
+  const embedTexts = (texts: string[], model?: string, purpose?: string, signal?: AbortSignal) =>
+    embedBookTexts(texts, model, purpose, signal, setProgress);
 
   function bookSummary(stored: StoredBook): BookSummary {
     return summary(stored);
@@ -342,7 +260,7 @@ export default function Home() {
         return;
       }
       setStage("reading");
-      const { pages, totalPages, author, ocrPages } = await extractPages(file);
+      const { pages, totalPages, author, ocrPages } = await extractPages(file, setProgress);
       const nonEmptyPages = pages.filter((page) => page.text.length > 20);
       if (!nonEmptyPages.length) throw new Error("No readable text was found, including after OCR.");
       setStage("indexing");
@@ -378,21 +296,6 @@ export default function Home() {
     }
   }
 
-  function updateExchanges(next: Exchange[]) {
-    exchangesRef.current = next;
-    setExchanges(next);
-  }
-
-  function persistExchanges(turns: Exchange[], owner = quota?.user.userId, bookId = book?.id, remember = preferences.rememberHistory) {
-    if (!remember || !owner || !bookId) return Promise.resolve();
-    const memory = { ...summaries.current };
-    // Serialize pending/completed/interrupted writes so an older snapshot
-    // cannot replace a newer reply after an asynchronous IndexedDB open.
-    historyWrites.current = historyWrites.current.then(() => saveHistory(owner, bookId, turns, memory)).catch(() => {
-      setVoiceNotice("Your messages are still visible, but could not be saved on this device. Keep this page open.");
-    });
-    return historyWrites.current;
-  }
 
   async function ask(rawQuestion: string, revision = "", original?: Exchange, retryId?: string) {
     const cleanQuestion = rawQuestion.trim();
@@ -416,14 +319,14 @@ export default function Home() {
         const response = await fetch("/api/history/summary", { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
         const data = await response.json() as { summary: string; error?: string };
         signal.throwIfAborted();
-        if (!response.ok) throw new Error(data.error || "对话摘要失败，请重试；原始记录仍然保留。");
+        if (!response.ok) throw new Error(data.error || "Could not summarize the conversation. Please retry; original messages are still saved.");
         return data.summary;
       }, async () => {
         signal.throwIfAborted();
         await persistExchanges(exchangesRef.current, owner, bookId);
       });
       signal.throwIfAborted();
-      setContextNote(conversation.mode === "full" ? `本次参考全部 ${conversation.totalTurns} 轮前文` : `本次参考早期摘要、${conversation.turns.length} 轮近期原文及 ${conversation.recalled.length} 段相关历史`);
+      setContextNote(conversation.mode === "full" ? `Using all ${conversation.totalTurns} previous turns` : `Using earlier summaries, ${conversation.turns.length} recent turns and ${conversation.recalled.length} recalled passages`);
       setStage("retrieving");
       const query = retrievalQuestion(cleanQuestion, history);
       const retrieved = await retrievalRetries.current.retrieve({
@@ -463,11 +366,6 @@ export default function Home() {
     }
   }
 
-  async function prepareAudio() {
-    if (!audioContext.current || audioContext.current.state === "closed") audioContext.current = new AudioContext();
-    if (audioContext.current.state === "suspended") await audioContext.current.resume();
-    return audioContext.current;
-  }
 
   function clearTranscript() {
     const id = draftExchange.current; draftExchange.current = null;
@@ -613,52 +511,6 @@ export default function Home() {
     }
   }
 
-  async function playBuffer(buffer: AudioBuffer, context: AudioContext, signal: AbortSignal) {
-    await voiceInputGate.current.wait(signal);
-    signal.throwIfAborted();
-    const playback = new PausableAudio(context, buffer, node => { audioPlayer.current = node; });
-    audioPlayback.current = playback;
-    try { await playback.play(signal); }
-    finally { if (audioPlayback.current === playback) audioPlayback.current = null; }
-  }
-
-  async function speak(text: string, signal: AbortSignal, exchangeId: string) {
-    setStage("voicing"); playingExchange.current = exchangeId; replay.current = { buffers: [], exchangeId }; setReplayAvailable(false);
-    const saved = replay.current;
-    try {
-      const context = audioContext.current || await prepareAudio();
-      const jobs = speechSegments(text).map(async (segment, index) => {
-        try {
-          const response = await fetch("/api/speech", { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: segment }) });
-          if (!response.ok) { const payload = await response.json() as { error?: string }; throw new Error(payload.error || "Speech generation failed"); }
-          const buffer = await context.decodeAudioData(await response.arrayBuffer()); signal.throwIfAborted();
-          saved.buffers[index] = buffer; setReplayAvailable(true);
-          return { buffer };
-        } catch (error) { return { error }; }
-      });
-      for (const job of jobs) {
-        const result = await job; signal.throwIfAborted();
-        if (!result.buffer) throw result.error;
-        setStage("speaking"); await playBuffer(result.buffer, context, signal);
-      }
-      signal.throwIfAborted(); playingExchange.current = null; setStage("ready");
-    } catch (caught) {
-      if (signal.aborted) return;
-      playingExchange.current = null; setStage("ready");
-      setVoiceNotice(caught instanceof Error ? `The answer is ready. ${caught.message}` : "The answer is ready, but audio is unavailable. You can read it above.");
-    }
-  }
-
-  function stopAudio() {
-    if (audioPlayer.current) { try { audioPlayer.current.stop(); } catch {} audioPlayer.current = null; }
-  }
-
-  async function replayAudio() {
-    const saved = replay.current; if (!saved?.buffers.length) return;
-    interruptReply(); const signal = turnGate.current.next(); playingExchange.current = saved.exchangeId;
-    try { const context = await prepareAudio(); signal.throwIfAborted(); setStage("speaking"); for (const buffer of saved.buffers.filter(Boolean)) await playBuffer(buffer, context, signal); signal.throwIfAborted(); playingExchange.current = null; setStage("ready"); }
-    catch { if (!signal.aborted) { playingExchange.current = null; setStage("ready"); setVoiceNotice("Your browser could not play the audio. The text answer is still available."); } }
-  }
 
   function resetBook() {
     if (bookTransitionBlocked) return;
@@ -686,13 +538,13 @@ export default function Home() {
         <div className="topbar-actions">
           {quota?.isAdmin && <a className="admin-link" href="/admin"><ShieldCheck size={15} /> Admin</a>}
           {workspaceTab === "chat" && <button className="library-toggle" onClick={() => setLibraryOpen((value) => !value)} aria-label="Library"><Library size={15} /><span>Library</span></button>}
-          <div className="account-quota" role="status" aria-label="今日剩余额度" title="剩余额度 / 每日总额；语音格式为分:秒。每天新加坡时间 00:00 重置。">
-            <small>今日剩余 / 每日总额</small>
-            {quota ? <div><span>提问 <b>{quota.questions.remaining}</b> / {quota.questions.limit} 次</span><span>语音 <b>{formatQuotaDuration(quota.voice.remainingSeconds)}</b> / {formatQuotaDuration(quota.voice.limitSeconds)}</span></div> : <span>额度暂时无法加载</span>}
+          <div className="account-quota" role="status" aria-label="Today's remaining allowance" title="Remaining / daily limit. Voice time is minutes:seconds. Resets at midnight Singapore time.">
+            <small>Remaining / daily limit</small>
+            {quota ? <div><span>Questions <b>{quota.questions.remaining}</b> / {quota.questions.limit} </span><span>Voice <b>{formatQuotaDuration(quota.voice.remainingSeconds)}</b> / {formatQuotaDuration(quota.voice.limitSeconds)}</span></div> : <span>Allowance unavailable</span>}
           </div>
           <div className="account-controls">
-            <span className="account-name" title={quota?.user.username}><UserRound size={15} /><span>{quota?.user.username || "账号"}</span></span>
-            <button className="icon-action" onClick={() => void logout()} aria-label={`Sign out ${quota?.user.username || "user"}`} title="退出登录"><LogOut size={15} /></button>
+            <span className="account-name" title={quota?.user.username}><UserRound size={15} /><span>{quota?.user.username || "Account"}</span></span>
+            <button className="icon-action" onClick={() => void logout()} aria-label={`Sign out ${quota?.user.username || "user"}`} title="Sign out"><LogOut size={15} /></button>
           </div>
         </div>
       </header>
@@ -747,7 +599,7 @@ export default function Home() {
                 <div className="source-strip">{exchange.sources.slice(0, 4).map((source, index) => <button key={source.id} onClick={() => setActiveSource(source)}><b>{index + 1}</b>{pageLabel(source)} · {source.sectionTitle}</button>)}</div>
                 <AnswerFeedback exchange={exchange} bookName={book?.name || ""} disabled={bookTransitionBlocked || !preferencesReady} onRewrite={instruction => void ask(exchange.question, instruction, exchange)} onRemember={async instruction => {
                   const guidance = [preferences.guidance, instruction].filter(Boolean).join("\n");
-                  if (guidance.length > 600) throw new Error("偏好超过 600 字，请先到阅读偏好中整理。");
+                  if (guidance.length > 600) throw new Error("Preferences exceed 600 characters. Please shorten them in Reading preferences.");
                   await savePreferences({ ...preferences, guidance });
                 }} />
                 </> : exchange.replyStatus === "pending" ? <ReplyProgress label={stageCopy[stage]} detail="Your question is sent and stays in this conversation." onStop={interruptReply} /> : <div className="reply-incomplete" role="status">
@@ -771,7 +623,7 @@ export default function Home() {
               {replayAvailable && ["ready", "error"].includes(stage) && !transcript && <button onClick={() => void replayAudio()}><Play size={13} /> Play saved audio</button>}
             </div>
             {(stage === "reading" || stage === "indexing") && <div className="progress-block"><span style={{ width: `${progress}%` }} /><p>{stageCopy[stage]} <b>{progress}%</b></p></div>}
-            <p className="ai-disclosure">{contextNote || "短对话参考全部前文；长对话使用摘要并找回相关原始消息。"}<br />{preferences.rememberHistory ? `本机完整保留 ${exchanges.length} 轮对话` : "当前未开启跨会话保存"} · 回答和语音由 AI 生成，请核对原文引用。</p>
+            <p className="ai-disclosure">{contextNote || "Short conversations use all prior turns; longer ones use summaries and recalled messages."}<br />{preferences.rememberHistory ? `All ${exchanges.length} turns saved on this device` : "History saving is off"} · Answers and audio are AI-generated. Check the cited passages.</p>
           </div>
         </section>
 

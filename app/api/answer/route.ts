@@ -16,7 +16,7 @@ export const POST = aiRoute("answer", async (request: Request) => {
     assertSameOrigin(request);
     const user = await requireApiUser();
     const raw = await request.text();
-    if (bytes(raw) > 450_000) throw new ApiError("请求过大，请刷新页面后重试。", 413);
+    if (bytes(raw) > 450_000) throw new ApiError("Request too large. Please refresh and try again.", 413);
     const body = JSON.parse(raw) as { question?: unknown; contexts?: Context[]; history?: unknown; conversation?: unknown; revision?: unknown; revisionAnswer?: unknown };
     const question = String(body.question || "").trim();
     const contexts = Array.isArray(body.contexts) ? body.contexts.slice(0, 8) : [];
@@ -32,8 +32,8 @@ export const POST = aiRoute("answer", async (request: Request) => {
     const legacy = normalizeHistory(body.history);
     let conversation;
     try { conversation = validateContext(body.conversation || { mode: "full", turns: legacy, summary: "", recalled: [], totalTurns: legacy.length }); }
-    catch { throw new ApiError("对话上下文无效或过大，请刷新页面后重试。", 400); }
-    if (question.length > 2000) throw new ApiError("请将问题控制在 2000 字以内。", 400);
+    catch { throw new ApiError("Conversation context is invalid or too large. Please refresh and try again.", 400); }
+    if (question.length > 2000) throw new ApiError("Please keep your question within 2,000 characters.", 400);
     const revision = typeof body.revision === "string" ? body.revision.slice(0, 1000) : "";
     const oneSentence = requestsOneSentence(question, revision);
     // This is per-turn only; never overwrite the reader's saved preferences.

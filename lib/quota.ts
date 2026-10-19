@@ -128,7 +128,7 @@ export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: numbe
     },
     historySummary: {
       column: "history_summary_characters", limit: "500000",
-      message: "今天的长对话整理额度已用完，请明天继续；原始聊天仍然保留。",
+      message: "Today's conversation-summary allowance is used up. Please continue tomorrow; original messages are still saved.",
     },
   } satisfies Record<Meter, { column: string; limit: string; message: string }>;
   const spec = specs[meter];

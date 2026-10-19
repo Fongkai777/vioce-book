@@ -6,6 +6,7 @@ import Home from "../../app/page";
 import { saveBook } from "@/lib/book-library";
 import { defaultPreferences } from "@/lib/personalization";
 import { pcmWav } from "@/lib/voice-turn";
+import { releaseAudioContext } from "@/lib/audio-context";
 export default function VoiceQA() {
   const [ready, setReady] = useState(false), [events, setEvents] = useState<string[]>([]);
   const input = useRef<{context:AudioContext;gain:GainNode}|null>(null);
@@ -54,7 +55,7 @@ export default function VoiceQA() {
       input.current = {context,gain}; return dest.stream;
     };
     void saveBook("synthetic-voice-qa", {id:"qa-voice-book",name:"Synthetic voice test book",pages:1,chapters:1,chunks:1,fileSize:0,storedAt:new Date().toISOString(),lastOpenedAt:new Date().toISOString(),index:[{id:"qa-chunk",sectionTitle:"Read carefully",text:"Read carefully and ask questions about what the author means.",pageStart:1,pageEnd:1,embedding:[1,0]}]}).then(()=>setReady(true));
-    return () => {window.fetch=originalFetch;navigator.mediaDevices.getUserMedia=originalMic;void input.current?.context.close();};
+    return () => {window.fetch=originalFetch;navigator.mediaDevices.getUserMedia=originalMic;releaseAudioContext({current:input.current?.context || null});input.current=null;};
   },[]);
   return <>{ready && <Home />}<aside style={{position:"fixed",right:6,top:90,zIndex:999,background:"#fff",border:"1px solid #333",padding:12,fontSize:11,maxWidth:260}}><strong>Synthetic voice QA — no real mic/API</strong><button onClick={()=>{scriptedResults.current=[];void pulse();}}>Speak synthetic turn</button><button onClick={()=>scenario("")}>Empty sound only</button><button onClick={()=>scenario(null)}>Fail next turn</button><button onClick={()=>{failAnswer.current=true;scenario("Please keep this failed question");}}>Fail next reply</button><button onClick={()=>{delayed.current=!delayed.current;setEvents(old=>[...old,`Slow replies: ${delayed.current}`]);}}>Toggle slow replies</button>{events.map((event,index)=><p key={index}>{event}</p>)}</aside></>;
 }
