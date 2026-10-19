@@ -8,10 +8,12 @@
 
 | 测什么 | 怎么测 | 结果与边界 | 证据 |
 | --- | --- | --- | --- |
-| 自动化回归 | 实际模块、模拟 IndexedDB、隔离 SQLite、合成供应商 | **2026-10-19，提交 `cd4187a`：150/150 通过**；后续数量以运行结果为准 | [测试](../tests)、[CI](https://github.com/Fongkai777/voice-book/actions/workflows/ci.yml) |
+| 自动化回归 | 实际模块、模拟 IndexedDB、隔离 SQLite、合成供应商 | **2026-10-20，提交 `5ee91b6`：156/156 通过**；后续数量以运行结果为准 | [测试](../tests)、[CI](https://github.com/Fongkai777/voice-book/actions/workflows/ci.yml) |
 | 静态与发布检查 | 零警告 lint、类型、私人文件/历史扫描、Worker/客户端构建 | 同一基线本地通过；远程 CI 结果单独核实 | [工作流](../.github/workflows/ci.yml)、[lint 说明](LINT.zh-CN.md) |
 | 长书入库与原文依据 | v28 上从零上传 12 章、56 页公开 PDF，四次提问 | 三个事实回答有原文支持；一个拒答未编造数字，仍有多余引用。该文字 PDF 不覆盖 OCR | [报告与标准题](acceptance/README.zh-CN.md)、[截图导览](acceptance/demo.mp4) |
 | 语音与连续对话 | 合成语音经扬声器→真实麦克风；本地合成音频 fixture | 公开图书四轮自动发送，引用与刷新恢复通过；早期八轮暴露空声音误停和识别错误，不是真人认证 | [公开观察](acceptance/browser-observations.json)、[声学记录](EVALUATION-LOG.zh-CN.md) |
+| 最近线上语音重测 | v33，同一本书重新建索引，相同历史与七个问题 | 换话题、语言和章节标签表现改善；结局回答仍有错误，外放打断不稳定。发现语音 429 后改为顺序请求，该修复仅完成离线测试，尚未重新声学测量 | [v33 记录](EVALUATION-LOG.zh-CN.md#2026-10-20-v33-重测) |
+| 语音队列与重试 | 合成响应、并发计数、等待时取消 | 每条回答同时只请求一段；失败后停止后续段；只重试临时繁忙 429，取消停止重试 | [队列测试](../tests/speech-queue.test.mjs) |
 | 检索缓存持久化 | BM25 序列化恢复、失效缓存、并发删除/保存 | 中英文分数一致，重开不分词全文，账号隔离，不重新 embedding 或联网 | [缓存测试](../tests/bm25-persistence.test.mjs)、[排名测试](../tests/retrieval.test.mjs) |
 | 登录与账号管理 | 隔离 SQLite 上真实路由、并发和轮换 IP | 后台验密独立于公开登录；停用/重置普通账号撤销会话；拒绝无效线上 IP 头 | [安全测试](../tests/server-security.test.mjs)、[安全说明](../SECURITY.zh-CN.md) |
 | 额度、预算与恢复 | 服务失败、并发、加密备份与回滚 | 退还失败接口的个人额度，主动取消不退；全站预留另计。未进行真实生产恢复 | [路由测试](../tests/server-security.test.mjs)、[备份测试](../tests/backup.test.mjs)、[运维](OPERATIONS.zh-CN.md) |
