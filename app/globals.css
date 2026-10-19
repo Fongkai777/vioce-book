@@ -265,7 +265,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .exchange { margin-bottom: 45px; }
 .question-row { margin-left: auto; width: min(85%, 570px); padding: 14px 18px; border-radius: 16px 16px 4px 16px; background: #e4ded1; }
 .question-row span { display: block; color: #7f8983; font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 5px; }
-.question-row p { margin: 0; font-size: 14px; line-height: 1.5; }
+.question-row p { margin: 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.question-row textarea { width: 100%; min-height: 72px; padding: 9px; border: 1px solid #b4c7ba; border-radius: 8px; background: white; font: inherit; resize: vertical; }
+.question-status { display: block; margin: 8px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .answer-row { margin-top: 22px; }
 .answer-label { display: flex; align-items: center; gap: 8px; color: var(--forest); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .mini-mark { width: 27px; height: 27px; display: grid; place-items: center; background: var(--forest); color: white; border-radius: 50%; }
@@ -278,6 +280,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .thinking-card { border: 1px solid var(--line); background: rgba(255,255,255,.55); }
 .thinking-card div { display: flex; flex-direction: column; gap: 2px; }
 .thinking-card span { color: #7d8882; font-size: 10px; }
+.reply-progress { flex-wrap: wrap; }
+.reply-progress > svg { flex-shrink: 0; }
+.reply-progress > div { flex: 1; min-width: 120px; }
+.reply-progress .stop-reply, .reply-incomplete button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; min-height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; background: var(--cream); color: var(--forest); font-size: 11px; font-weight: 700; cursor: pointer; }
+.reply-progress .stop-reply:hover, .reply-incomplete button:hover { background: #e4ded1; }
+.reply-incomplete { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(255,255,255,.55); color: var(--muted); font-size: 12px; line-height: 1.6; }
+.reply-incomplete span { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.reply-incomplete button:disabled { opacity: .5; cursor: default; }
 .spin { animation: spin 1s linear infinite; color: var(--coral); }
 .error-card { background: #f8e0d9; color: #853e30; }
 .error-card span { flex: 1; }
@@ -440,20 +450,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .voice-status-dot.muted { background:#8b938e; }
 .voice-waveform { height:34px; display:flex; gap:2px; align-items:center; width:138px; overflow:hidden; }
 .voice-waveform i { display:block; width:3px; flex-shrink:0; border-radius:2px; background:#387d5d; transition:height 80ms linear; }
-.voice-session-card > p, .voice-transcript small { color:var(--muted); font-size:11px; line-height:1.6; margin:8px 0; display:block; }
+.voice-session-card > p { color:var(--muted); font-size:11px; line-height:1.6; margin:8px 0; display:block; }
 .voice-session-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .voice-session-actions button, .voice-toolbar button { display:inline-flex; gap:5px; align-items:center; border:1px solid #c6d5ca; border-radius:7px; padding:7px 9px; background:#fffdf8; font-size:11px; color:var(--green); }
-.voice-transcript { border-top:1px solid #d1dfd4; padding-top:12px; margin-top:12px; }
-.voice-transcript label { font-size:10px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); }
-.voice-transcript p { font-size:16px; line-height:1.5; margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
-.voice-transcript textarea { width:100%; min-height:72px; max-height:130px; padding:9px; margin-top:8px; border:1px solid #b4c7ba; border-radius:8px; background:white; font:inherit; resize:vertical; }
-.voice-transcript > .voice-session-actions { position:sticky; bottom:0; background:#f1f6ef; padding-top:5px; }
 .voice-notice { font-size:12px; line-height:1.5; color:var(--muted); margin:5px 0 10px; }
 .voice-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 4px 8px; font-size:11px; color:var(--muted); }
 .voice-toolbar:empty { display:none; }
 .voice-toolbar .start-voice-button { background:var(--green); color:white; border:0; padding:12px 18px; border-radius:24px; font-size:13px; gap:8px; }
 .playback-note { display:block; color:var(--muted); font-size:11px; margin-top:10px; }
-.pending-question { margin:15px 0 15px auto; }
 @media(max-width:700px) { .voice-waveform { width:70px; } .voice-session-card { padding:10px 12px; } .voice-session-top strong { font-size:12px; } }
 @media(prefers-reduced-motion:reduce) { .voice-waveform i { transition:none; } }
 @media(max-width:700px) { .reading-header { padding:14px 18px; gap:8px; } .reading-title strong { font-size:13px; } .reading-title small { font-size:10px; } .reader-settings { padding:24px; } }

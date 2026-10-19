@@ -6,34 +6,46 @@ import ts from "typescript";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 const hook = registerHooks({ load(url, context, nextLoad) {
-  if (!url.endsWith("/app/voice-session.tsx")) return nextLoad(url, context);
+  if (!/\/app\/(voice-session|reply-progress|question-message)\.tsx$/.test(url)) return nextLoad(url, context);
   return { format:"module", shortCircuit:true, source:ts.transpileModule(readFileSync(new URL(url), "utf8"), {
     compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022},
   }).outputText };
 } });
-const { default: VoiceSession } = await import("../app/voice-session.tsx"); hook.deregister();
+const { default: VoiceSession } = await import("../app/voice-session.tsx");
+const { default: ReplyProgress } = await import("../app/reply-progress.tsx");
+const { default: QuestionMessage } = await import("../app/question-message.tsx");
+hook.deregister();
 const render = props => renderToStaticMarkup(createElement(VoiceSession, {
-  active:true,connecting:false,level:.6,state:"listening",muted:false,transcript:"",editing:false,
-  onEdit(){},onChange(){},onSend(){},onDismiss(){},onMute(){},onFinish(){},onEnd(){},...props,
+  active:true,connecting:false,level:.6,state:"listening",muted:false,
+  onMute(){},onFinish(){},onEnd(){},...props,
 }));
-test("voice controls expose live level and clear microphone/stop actions", () => {
+const message = props => renderToStaticMarkup(createElement(QuestionMessage, {text:"Keep my recognized words",...props}));
+
+test("microphone controls retain the live level but contain no transcription preview", () => {
   const html = render(); assert.match(html, /aria-valuenow="60"/); assert.match(html, /I can hear you/);
   assert.match(html, /Mute microphone/); assert.match(html, /Done speaking/); assert.match(html, /End voice/);
+  assert.doesNotMatch(html, /voice-transcript|You said|Send now|Edit transcript|Stop reply/);
   assert.equal(render({active:false}), "");
 });
-test("transcripts appear before sending and can be edited or cancelled", () => {
-  const html = render({state:"reviewing",transcript:"What is the main idea?"});
-  assert.match(html, /You said/); assert.match(html, /What is the main idea/); assert.match(html, /Edit transcript/);
-  const editing = render({state:"reviewing",transcript:"Corrected",editing:true,muted:true});
-  assert.match(editing, /<textarea/); assert.match(editing, /Automatic sending is paused/); assert.match(editing, /Send now/);
+test("recognized and sent speech use the same chat bubble without confirmation", () => {
+  for (const unsent of [true,false]) {
+    const html = message({unsent});
+    assert.match(html, /question-row/); assert.match(html, /Keep my recognized words/);
+    assert.doesNotMatch(html, /<textarea|<button|Edit transcript|Send now/);
+  }
 });
-test("recognized text remains visible but cannot be submitted during a continuation", () => {
-  const html = render({state:"transcribing",transcript:"Keep my first words"});
-  assert.match(html, /Keep my first words/); assert.match(html, /Nothing has been sent yet/);
-  assert.match(html, /<button disabled="">Send now<\/button>/);
+test("incomplete or explicitly held speech can be reviewed inside its chat message", () => {
+  const html = message({unsent:true,editing:true,onChange(){},onSend(){},onLeave(){}});
+  assert.match(html, /<textarea/); assert.match(html, /Not sent/); assert.match(html, /Send question/);
+  assert.match(html, /Leave unsent/);
+  const pending = message({unsent:true,editing:true,processing:true,onChange(){},onSend(){}});
+  assert.match(pending, /Transcribing the rest/);
+  assert.match(pending, /<button disabled="">Send question<\/button>/);
 });
-test("ending voice with a draft offers review rather than pretending to listen", () => {
-  const html = render({active:false,state:"reviewing",transcript:"Keep my first words",editing:true});
-  assert.match(html, /Review your question/); assert.match(html, /Discard question/);
-  assert.doesNotMatch(html, /Listening — go ahead|End voice conversation/);
+test("stop reply is next to assistant progress during generation and playback", () => {
+  for (const speaking of [false,true]) {
+    const html = renderToStaticMarkup(createElement(ReplyProgress, {label:"Working",detail:"Question kept",speaking,onStop(){}}));
+    assert.match(html, /thinking-card reply-progress/); assert.match(html, /aria-label="Assistant reply"/);
+    assert.match(html, /Stop reply/); assert.equal(/class="[^"]*\bspin\b/.test(html), !speaking);
+  }
 });

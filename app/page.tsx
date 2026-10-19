@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, BookOpen, FileText, Headphones,
   Library, LoaderCircle, LogOut, Mic, Play, Plus, ShieldCheck, Sparkles,
-  Square, Trash2, Upload, UserRound, Volume2, X,
+  Trash2, Upload, UserRound, Volume2, X,
 } from "lucide-react";
 import {
   deleteBook, fingerprintBook, getBook, listBooks, markBookOpened, saveBook, summary,
@@ -25,11 +25,13 @@ import VoiceSession from "./voice-session";
 import { VoiceCapture } from "@/lib/voice-capture";
 import { speechSegments, TurnGate } from "@/lib/voice-turn";
 import { VoiceDraft } from "@/lib/voice-draft";
+import { beginReply, settleReply, recoverReplies, updateVoiceMessage, leaveUnsent, type Exchange } from "@/lib/chat-turns";
+import ReplyProgress from "./reply-progress";
+import QuestionMessage from "./question-message";
 
 type Stage = "idle" | "reading" | "indexing" | "ready" | "listening" | "transcribing" | "reviewing" | "voicing" | "remembering" | "retrieving" | "answering" | "speaking" | "error";
 type Chunk = StoredChunk & { denseScore?: number; sparseScore?: number; fusionScore?: number };
 type Source = Pick<Chunk, "id" | "sectionTitle" | "pageStart" | "pageEnd" | "text">;
-type Exchange = { id: string; question: string; answer: string; sources: Source[]; audioInterrupted?: boolean };
 type QuotaSnapshot = {
   questions: { used: number; limit: number; remaining: number };
   voice: { usedSeconds: number; limitSeconds: number; remainingSeconds: number };
@@ -81,7 +83,6 @@ export default function Home() {
   const [voiceLevel, setVoiceLevel] = useState(0);
   const [transcript, setTranscript] = useState("");
   const [editingTranscript, setEditingTranscript] = useState(false);
-  const [pendingQuestion, setPendingQuestion] = useState("");
   const [voiceNotice, setVoiceNotice] = useState("");
   const [replayAvailable, setReplayAvailable] = useState(false);
   const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
@@ -100,7 +101,9 @@ export default function Home() {
   const queuedTranscriptions = useRef(0);
   const voiceGeneration = useRef(0);
   const draft = useRef(new VoiceDraft());
-  const reviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftExchange = useRef<string | null>(null);
+  const pendingReply = useRef<string | null>(null);
+  const historyWrites = useRef<Promise<void>>(Promise.resolve());
   const replay = useRef<{ buffers: AudioBuffer[]; exchangeId: string } | null>(null);
   const playingExchange = useRef<string | null>(null);
   const exchangesRef = useRef<Exchange[]>([]);
@@ -116,7 +119,6 @@ export default function Home() {
   useEffect(() => { conversationEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [exchanges, stage]);
   useEffect(() => () => {
     voiceGeneration.current++; turnGate.current.cancel(); transcriptionGate.current.cancel(); capture.current?.stop();
-    if (reviewTimer.current) clearTimeout(reviewTimer.current);
     void audioContext.current?.close();
   }, []);
   useEffect(() => {
@@ -163,7 +165,9 @@ export default function Home() {
 
   async function clearReadingHistory() {
     if (!quota || !window.confirm("清空这个账号在本机保存的全部对话？书籍和索引不受影响。")) return;
-    await clearHistory(quota.user.userId); summaries.current = {}; setContextNote(""); setExchanges([]); stopAudio();
+    interruptReply();
+    await historyWrites.current;
+    await clearHistory(quota.user.userId); summaries.current = {}; setContextNote(""); updateExchanges([]); stopAudio();
   }
 
   async function savePreferences(next: Preferences) {
@@ -171,8 +175,8 @@ export default function Home() {
     const data = await response.json() as { preferences: Preferences; error?: string };
     if (!response.ok) throw new Error(data.error || "偏好保存失败");
     setPreferences(data.preferences);
-    if (!data.preferences.rememberHistory && quota) await clearHistory(quota.user.userId);
-    if (data.preferences.rememberHistory && quota && book) await saveHistory(quota.user.userId, book.id, exchanges, summaries.current);
+    if (!data.preferences.rememberHistory && quota) { await historyWrites.current; await clearHistory(quota.user.userId); }
+    if (data.preferences.rememberHistory && quota && book) await persistExchanges(exchangesRef.current, quota.user.userId, book.id, true);
   }
 
   const sampleQuestions = useMemo(() => book ? [
@@ -263,16 +267,17 @@ export default function Home() {
     try {
       setOpeningBookId(bookId);
       setSampleError("");
-      turnGate.current.cancel(); clearTranscript(); setPendingQuestion(""); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
+      interruptReply(); clearTranscript(); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
       stopAudio();
       setError("");
       const stored = fromSample ? await addSampleToLibrary(ownerId, bookId) : await getBook(ownerId, bookId);
       if (!stored) throw new Error("This book is no longer available in the local library.");
-      const history = preferences.rememberHistory ? await loadHistory<Exchange>(ownerId, bookId) : [];
+      await historyWrites.current;
+      const history = recoverReplies(preferences.rememberHistory ? await loadHistory<Exchange>(ownerId, bookId) : []);
       const memory = preferences.rememberHistory ? await loadSummaries(ownerId, bookId) : {};
       setBook(bookSummary(stored));
       setChunks(stored.index);
-      setExchanges(history);
+      updateExchanges(history);
       summaries.current = memory;
       setContextNote("");
       setActiveSource(null);
@@ -315,7 +320,7 @@ export default function Home() {
     try {
       const ownerId = quota?.user.userId;
       if (!ownerId) throw new Error("Your login session is not ready. Please refresh and try again.");
-      stopAudio(); setError(""); setBook(null); setChunks([]); setExchanges([]); setProgress(3);
+      stopAudio(); setError(""); setBook(null); setChunks([]); updateExchanges([]); setProgress(3);
       summaries.current = {}; setContextNote("");
       const id = await fingerprintBook(file);
       const cached = await getBook(ownerId, id);
@@ -360,14 +365,35 @@ export default function Home() {
     }
   }
 
-  async function ask(rawQuestion: string, revision = "", original?: Exchange) {
+  function updateExchanges(next: Exchange[]) {
+    exchangesRef.current = next;
+    setExchanges(next);
+  }
+
+  function persistExchanges(turns: Exchange[], owner = quota?.user.userId, bookId = book?.id, remember = preferences.rememberHistory) {
+    if (!remember || !owner || !bookId) return Promise.resolve();
+    const memory = { ...summaries.current };
+    // Serialize pending/completed/interrupted writes so an older snapshot
+    // cannot replace a newer reply after an asynchronous IndexedDB open.
+    historyWrites.current = historyWrites.current.then(() => saveHistory(owner, bookId, turns, memory)).catch(() => {
+      setVoiceNotice("Your messages are still visible, but could not be saved on this device. Keep this page open.");
+    });
+    return historyWrites.current;
+  }
+
+  async function ask(rawQuestion: string, revision = "", original?: Exchange, retryId?: string) {
     const cleanQuestion = rawQuestion.trim();
     if (!cleanQuestion || !chunks.length || openingBookId || !preferencesReady) return;
-    interruptReply(); cancelIncoming(true);
+    interruptReply(); cancelIncoming();
     const signal = turnGate.current.next();
-    const history = exchangesRef.current;
+    const history = exchangesRef.current.filter(turn => turn.id !== retryId);
     const owner = quota?.user.userId, bookId = book?.id;
-    clearTranscript(); stopAudio(); setPendingQuestion(cleanQuestion); setVoiceNotice("");
+    const exchangeId = retryId || crypto.randomUUID();
+    pendingReply.current = exchangeId;
+    const pending = beginReply(exchangesRef.current, cleanQuestion, exchangeId);
+    updateExchanges(pending);
+    clearTranscript(); stopAudio(); setVoiceNotice("");
+    void persistExchanges(pending, owner, bookId);
     void prepareAudio().catch(() => {});
     try {
       stopAudio(); setError(""); setStage("retrieving");
@@ -381,7 +407,7 @@ export default function Home() {
         return data.summary;
       }, async () => {
         signal.throwIfAborted();
-        if (preferences.rememberHistory && owner && bookId) await saveHistory(owner, bookId, history, summaries.current);
+        await persistExchanges(exchangesRef.current, owner, bookId);
       });
       signal.throwIfAborted();
       setContextNote(conversation.mode === "full" ? `本次参考全部 ${conversation.totalTurns} 轮前文` : `本次参考早期摘要、${conversation.turns.length} 轮近期原文及 ${conversation.recalled.length} 段相关历史`);
@@ -402,20 +428,19 @@ export default function Home() {
       if (!response.ok) throw new Error(payload.error || "Answer generation failed");
       if (payload.quota) setQuota(payload.quota);
       const sources = retrieved.map(({ id, sectionTitle, pageStart, pageEnd, text }) => ({ id, sectionTitle, pageStart, pageEnd, text }));
-      const exchangeId = crypto.randomUUID();
-      const next = [...history, { id: exchangeId, question: cleanQuestion, answer: payload.answer, sources }];
-      exchangesRef.current = next; setExchanges(next); setPendingQuestion("");
-      if (preferences.rememberHistory && owner && bookId) {
-        try { await saveHistory(owner, bookId, next, summaries.current); } catch { if (!signal.aborted) setError("回答已生成，但本机存储失败，历史未能保存；请勿关闭页面。"); }
-      }
+      const next = settleReply(exchangesRef.current, exchangeId, { replyStatus: "complete", answer: payload.answer, sources });
+      pendingReply.current = null; updateExchanges(next);
+      await persistExchanges(next, owner, bookId);
       signal.throwIfAborted();
       const spokenAnswer = String(payload.answer).replace(/\[S\d+\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
       await speak(spokenAnswer, signal, exchangeId);
     } catch (caught) {
       if (signal.aborted) return;
-      setPendingQuestion("");
-      draft.current.edit(cleanQuestion); showDraft(); capture.current?.mute(true); setVoiceMuted(true);
-      setError(caught instanceof Error ? caught.message : "The question could not be answered."); setStage("error");
+      const message = caught instanceof Error ? caught.message : "The question could not be answered.";
+      pendingReply.current = null;
+      const next = settleReply(exchangesRef.current, exchangeId, { replyStatus: "failed", replyError: message });
+      updateExchanges(next); void persistExchanges(next, owner, bookId);
+      setStage("error");
     }
   }
 
@@ -426,18 +451,25 @@ export default function Home() {
   }
 
   function clearTranscript() {
-    if (reviewTimer.current) clearTimeout(reviewTimer.current);
-    reviewTimer.current = null; draft.current.clear(); setTranscript(""); setEditingTranscript(false);
+    const id = draftExchange.current; draftExchange.current = null;
+    if (id && exchangesRef.current.some(turn => turn.id === id && turn.replyStatus === "draft")) {
+      const next = leaveUnsent(exchangesRef.current, id);
+      updateExchanges(next); void persistExchanges(next);
+    }
+    draft.current.clear(); setTranscript(""); setEditingTranscript(false);
   }
 
   function showDraft() {
     setTranscript(draft.current.text); setEditingTranscript(draft.current.needsReview);
+    if (draft.current.text || draftExchange.current) {
+      const id = draftExchange.current || crypto.randomUUID(); draftExchange.current = id;
+      const next = updateVoiceMessage(exchangesRef.current, draft.current.text, id);
+      updateExchanges(next); void persistExchanges(next);
+    }
   }
 
   function cancelIncoming(clear = false) {
     transcriptionGate.current.next(); transcriptionQueue.current = Promise.resolve(); queuedTranscriptions.current = 0;
-    if (reviewTimer.current) clearTimeout(reviewTimer.current);
-    reviewTimer.current = null;
     if (clear) clearTranscript();
   }
 
@@ -445,13 +477,17 @@ export default function Home() {
     const id = playingExchange.current; playingExchange.current = null;
     if (!id) return;
     const updated = exchangesRef.current.map(turn => turn.id === id ? { ...turn, audioInterrupted: true } : turn);
-    exchangesRef.current = updated; setExchanges(updated);
-    if (preferences.rememberHistory && quota && book) void saveHistory(quota.user.userId, book.id, updated, summaries.current).catch(() => setVoiceNotice("Playback stopped, but its status could not be saved."));
+    updateExchanges(updated); void persistExchanges(updated);
   }
 
   function interruptReply() {
     // Cancel assistant output only. Incoming speech and its draft are separate.
-    turnGate.current.cancel(); markAudioInterrupted(); stopAudio(); setPendingQuestion("");
+    turnGate.current.cancel(); markAudioInterrupted(); stopAudio();
+    const id = pendingReply.current; pendingReply.current = null;
+    if (id) {
+      const next = settleReply(exchangesRef.current, id, { replyStatus: "interrupted" });
+      updateExchanges(next); void persistExchanges(next);
+    }
     setStage(book ? "ready" : "idle");
   }
 
@@ -486,19 +522,15 @@ export default function Home() {
   }
 
   function muteVoice() {
-    if (!voiceMuted) { draft.current.hold(); if (reviewTimer.current) clearTimeout(reviewTimer.current); reviewTimer.current = null; showDraft(); }
+    if (!voiceMuted) { draft.current.hold(); showDraft(); }
     capture.current?.mute(!voiceMuted); setVoiceMuted(!voiceMuted);
     if (stage === "listening") setStage(draft.current.text ? "reviewing" : "ready");
   }
 
-  function editTranscript() {
-    if (reviewTimer.current) clearTimeout(reviewTimer.current);
-    reviewTimer.current = null; draft.current.hold(); showDraft(); capture.current?.mute(true); setVoiceMuted(true);
-  }
-
   function sendTranscript() {
     const text = draft.current.text.trim(); if (!text || queuedTranscriptions.current || capture.current?.speaking) return;
-    capture.current?.mute(false); setVoiceMuted(false); void ask(text);
+    const id = draftExchange.current || undefined;
+    capture.current?.mute(false); setVoiceMuted(false); void ask(text, "", undefined, id);
   }
 
   function discardTranscript() {
@@ -508,8 +540,6 @@ export default function Home() {
 
   actions.current = {
     speechStart: () => {
-      if (reviewTimer.current) clearTimeout(reviewTimer.current);
-      reviewTimer.current = null;
       interruptReply(); setError(""); setVoiceNotice(""); setStage("listening");
     },
     utterance: (file, seconds) => {
@@ -521,10 +551,7 @@ export default function Home() {
         showDraft();
         if (queuedTranscriptions.current || capture.current?.speaking) return;
         setStage(draft.current.text ? "reviewing" : draft.current.needsReview ? "error" : "ready");
-        if (draft.current.canAutoSend(queuedTranscriptions.current, !!capture.current?.speaking))
-          reviewTimer.current = setTimeout(() => {
-            if (!signal.aborted && draft.current.canAutoSend(queuedTranscriptions.current, !!capture.current?.speaking)) actions.current.sendTranscript();
-          }, 1800);
+        if (draft.current.canAutoSend(queuedTranscriptions.current, !!capture.current?.speaking)) actions.current.sendTranscript();
       });
     },
     stopped: reason => { if (capture.current || voiceConnecting) endVoice(reason); },
@@ -548,7 +575,7 @@ export default function Home() {
       if (signal.aborted) return;
       draft.current.hold(); showDraft();
       capture.current?.mute(true); setVoiceMuted(true);
-      setError((caught instanceof Error ? caught.message : "Speech could not be transcribed.") + (draft.current.text ? " Your earlier words are kept below; review them before sending." : " Resume the microphone to try again.")); setStage("error");
+      setError((caught instanceof Error ? caught.message : "Speech could not be transcribed.") + (draft.current.text ? " Your earlier words are kept in the chat; review them before sending." : " Resume the microphone to try again.")); setStage("error");
     }
   }
 
@@ -605,9 +632,9 @@ export default function Home() {
 
   function resetBook() {
     if (bookTransitionBlocked) return;
-    turnGate.current.cancel(); clearTranscript(); setPendingQuestion(""); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
+    interruptReply(); clearTranscript(); setVoiceNotice(""); replay.current = null; setReplayAvailable(false);
     summaries.current = {}; setContextNote("");
-    stopAudio(); setBook(null); setChunks([]); setExchanges([]);
+    stopAudio(); setBook(null); setChunks([]); updateExchanges([]);
     setActiveSource(null); setError(""); setProgress(0); setStage("idle");
   }
 
@@ -670,13 +697,19 @@ export default function Home() {
             <ReaderSettings preferences={preferences} onSave={savePreferences} onClear={clearReadingHistory} disabled={!preferencesReady || bookTransitionBlocked} />
           </div>
           <div className="conversation-scroll">
-            {!book ? <StartReading books={library} disabled={bookTransitionBlocked} openingBookId={openingBookId} onSelect={openStoredBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} /> : exchanges.length === 0 && !pendingQuestion ? <div className="ready-state">
+            {!book ? <StartReading books={library} disabled={bookTransitionBlocked} openingBookId={openingBookId} onSelect={openStoredBook} onUpload={() => fileInput.current?.click()} onSamples={() => { setSampleError(""); setSampleLibraryOpen(true); }} /> : exchanges.length === 0 ? <div className="ready-state">
               <div className="orb-small"><Headphones size={28} /></div><p className="eyebrow">The book is listening</p><h2>What would you like to understand?</h2>
               <p>Ask about an argument, event, character, definition, or connection across chapters.</p>
               <div className="sample-grid">{sampleQuestions.map((sample) => <button key={sample} onClick={() => void ask(sample)}>{sample}<ArrowUp size={13} /></button>)}</div>
             </div> : <div className="conversation-list">{exchanges.map((exchange) => <article className="exchange" key={exchange.id}>
-              <div className="question-row"><span>You asked</span><p>{exchange.question}</p></div>
-              <div className="answer-row"><div className="answer-label"><span className="mini-mark"><Volume2 size={13} /></span> Voicebook</div>
+              <QuestionMessage text={exchange.question} unsent={exchange.replyStatus === "draft" || exchange.replyStatus === "unsent"}
+                editing={exchange.id === draftExchange.current && editingTranscript}
+                processing={exchange.replyStatus === "draft" ? stage === "listening" || stage === "transcribing" : exchange.replyStatus === "unsent" ? busy || stage === "listening" : false}
+                onChange={exchange.id === draftExchange.current ? text => { draft.current.edit(text); showDraft(); } : undefined}
+                onSend={exchange.id === draftExchange.current && editingTranscript ? sendTranscript : exchange.replyStatus === "unsent" ? () => void ask(exchange.question, "", undefined, exchange.id) : undefined}
+                onLeave={exchange.id === draftExchange.current && editingTranscript ? discardTranscript : undefined} />
+              {!["draft", "unsent"].includes(exchange.replyStatus || "") && <div className="answer-row"><div className="answer-label"><span className="mini-mark"><Volume2 size={13} /></span> Voicebook</div>
+                {exchange.answer ? <>
                 <AnswerText text={exchange.answer} onCitation={(index) => setActiveSource(exchange.sources[index] || null)} />
                 {exchange.audioInterrupted && <small className="playback-note">Voice reply interrupted · Full text kept above</small>}
                 <div className="source-strip">{exchange.sources.slice(0, 4).map((source, index) => <button key={source.id} onClick={() => setActiveSource(source)}><b>{index + 1}</b>{pageLabel(source)} · {source.sectionTitle}</button>)}</div>
@@ -685,22 +718,24 @@ export default function Home() {
                   if (guidance.length > 600) throw new Error("偏好超过 600 字，请先到阅读偏好中整理。");
                   await savePreferences({ ...preferences, guidance });
                 }} />
-              </div>
+                </> : exchange.replyStatus === "pending" ? <ReplyProgress label={stageCopy[stage]} detail="Your question is sent and stays in this conversation." onStop={interruptReply} /> : <div className="reply-incomplete" role="status">
+                  <span>{exchange.replyStatus === "failed" ? `Reply failed. ${exchange.replyError || "Please try again."}` : "Reply stopped. Your question is kept."}</span>
+                  <button disabled={busy || stage === "listening" || !!openingBookId || !preferencesReady} onClick={() => void ask(exchange.question, "", undefined, exchange.id)}>Retry reply</button>
+                </div>}
+                {playingExchange.current === exchange.id && ["voicing", "speaking"].includes(stage) && <ReplyProgress label={stageCopy[stage]} detail="Speak again or stop the reply at any time." speaking={stage === "speaking"} onStop={interruptReply} />}
+              </div>}
             </article>)}</div>}
-            {pendingQuestion && <div className="question-row pending-question"><span>You asked</span><p>{pendingQuestion}</p></div>}
-            {busy && <div className="thinking-card"><LoaderCircle className="spin" size={18} /><div><strong>{stageCopy[stage]}</strong><span>{stage === "retrieving" ? "Combining semantic and exact-match signals" : "This usually takes a few seconds"}</span></div></div>}
+            {busy && !["retrieving", "remembering", "answering", "voicing"].includes(stage) && <div className="thinking-card"><LoaderCircle className="spin" size={18} /><div><strong>{stageCopy[stage]}</strong><span>This usually takes a few seconds</span></div></div>}
             {error && <div className="error-card"><X size={17} /><span>{error}</span><button onClick={() => { setError(""); setStage(book ? "ready" : "idle"); }}>Dismiss</button></div>}
             <div ref={conversationEnd} />
           </div>
 
           <div className="composer-wrap">
-            <VoiceSession active={voiceOn} connecting={voiceConnecting} level={voiceLevel} state={stage} muted={voiceMuted} transcript={transcript} editing={editingTranscript}
-              onEdit={editTranscript} onChange={text => { draft.current.edit(text); showDraft(); }} onSend={sendTranscript} onDismiss={discardTranscript}
+            <VoiceSession active={voiceOn} connecting={voiceConnecting} level={voiceLevel} state={stage} muted={voiceMuted}
               onMute={muteVoice} onFinish={() => capture.current?.finish()} onEnd={() => endVoice()} />
             {voiceNotice && <p className="voice-notice" role="status">{voiceNotice}</p>}
             <div className="voice-toolbar">
               {book && !voiceOn && !voiceConnecting && !transcript && <button className="start-voice-button" onClick={() => void startRecording()} disabled={busy || !preferencesReady || !!openingBookId}><Mic size={18} /> Start voice conversation</button>}
-              {["speaking", "voicing", "answering", "retrieving", "remembering"].includes(stage) && <button onClick={interruptReply}><Square size={14} /> Stop reply</button>}
               {replayAvailable && ["ready", "error"].includes(stage) && !transcript && <button onClick={() => void replayAudio()}><Play size={13} /> Play saved audio</button>}
             </div>
             {(stage === "reading" || stage === "indexing") && <div className="progress-block"><span style={{ width: `${progress}%` }} /><p>{stageCopy[stage]} <b>{progress}%</b></p></div>}

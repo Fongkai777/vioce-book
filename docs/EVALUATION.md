@@ -2,7 +2,7 @@
 
 ## Automated release checks
 
-`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The operations release has **75 tests**, including a synthetic two-page PDF extraction regression; the current runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits production and reviewed development dependencies, installs the locked dependencies and receives no production/model secrets.
+`pnpm check` runs secret/private-file boundaries, `tsc --noEmit`, Node's test runner and a Worker/client build. The current release has **84 tests**, including a synthetic two-page PDF extraction regression; the current runner output is authoritative as more tests are added. CI is defined in `.github/workflows/ci.yml`, pins action revisions, audits the full dependency tree without advisory exceptions, installs the locked dependencies and receives no production/model secrets.
 
 | Area | Automated evidence |
 | --- | --- |
@@ -10,7 +10,7 @@
 | Local books | v1→v2 atomic migration, metadata-only reads, lazy PDF loading, preserved imported vectors, account isolation |
 | Book manager | Two tabs, overview readiness, unknown legacy metadata, source-aware sample/private copies, citation pagination |
 | History | More than 20 turns, concurrent saves, account/book scoped clearing, legacy migration, full/compressed context and summary cache/failure |
-| Voice | Energy detection, pre-roll, silence, bounded utterances, WAV encoding, playback interruption, cancellation, transcript merging, empty/error continuation and review controls |
+| Voice | Energy detection, pre-roll, silence, bounded utterances, WAV encoding, playback interruption, cancellation, stable speech-message IDs, transcript merging, retained failed/stopped/unsent messages, in-chat recovery and reply-local stop controls |
 | Server | Actual auth/quota/route modules using in-memory SQLite and all committed D1 SQL migrations; host cookie/env adapters only are replaced |
 | Server security | Salted hashes, hashed/expired/revoked sessions, login throttle, concurrent bootstrap, regular-user admin denial, cross-origin mutation rejection, authentication gates, quota concurrency/bounds and error sanitization |
 | Account data | Preferences/feedback cannot target a submitted foreign user ID; samples are authenticated/allowlisted and cost no quota to open |
@@ -24,7 +24,7 @@ The server harness throws on external `fetch` by default; the provider-wrapper r
 
 `tests/fixtures/book-qa.tsx` and `voice-qa.tsx` use synthetic account data. Temporarily re-export one from a local-only app route, run the development server, exercise the UI, then remove the route. Never publish these routes. The voice fixture supplies synthetic audio; it does not need the real microphone or paid API calls. It cannot prove hardware accuracy.
 
-The latest book-management browser check covered default Overview, collapsed technical details, text fallback, passage search, citation navigation to list page 3, keyboard tab switching and incomplete-index warnings. Earlier synthetic voice checks covered draft preservation after empty recognition, editing, playback and cancellation. These are recorded manual observations, not unattended browser tests in CI.
+The latest book-management browser check covered default Overview, collapsed technical details, text fallback, passage search, citation navigation to list page 3, keyboard tab switching and incomplete-index warnings. On 2026-10-19, Chrome on macOS with the synthetic voice fixture verified direct automatic submission into a chat bubble with no preview/confirmation, stopping generation, speech interrupting pending replies, refresh recovery of all three stopped questions, answer failure, retry in the same message, automatic playback and reply-local playback stop. Earlier synthetic checks covered empty recognition and failed continuations. These are recorded manual observations, not unattended browser tests in CI. The temporary QA route was removed before the production build; no real microphone, account data or paid API was used.
 
 ## Real-device / release acceptance matrix
 
