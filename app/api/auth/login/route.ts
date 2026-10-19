@@ -1,3 +1,4 @@
+import { monitoredRoute } from "@/lib/operations";
 import { assertSameOrigin } from "@/lib/request-security";
 import { authenticate, clearLoginRateLimit, enforceLoginRateLimit, setSessionCookie } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/errors";
@@ -21,4 +22,3 @@ export const POST = monitoredRoute("auth/login", async (request: Request) => {
     return apiErrorResponse(error);
   }
 }, 4096, false);
-import { monitoredRoute } from "@/lib/operations";

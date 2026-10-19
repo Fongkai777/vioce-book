@@ -37,3 +37,17 @@ test("hybrid retrieval combines semantic and lexical signals", () => {
   const result = hybridRetrieve("nebula protocol", [0.7, 0.7], chunks, 2);
   assert.equal(result[0].id, "b");
 });
+
+test("BM25 stays fast on a long book and reuses cached chunk statistics", () => {
+  const words = "alice queen king rabbit said the of and to a".split(" ");
+  const chunks = Array.from({ length: 1500 }, (_, i) => ({ sectionTitle: "Chapter", text: Array.from({ length: 250 }, (_, j) => words[(i * 7 + j * 13) % words.length] + (j % 5 ? "" : `x${(i * j) % 997}`)).join(" ") }));
+  const first = bm25Scores("what did the queen say to alice", chunks);
+  const started = performance.now();
+  const second = bm25Scores("what did the queen say to alice", chunks);
+  assert.deepEqual(second, first);
+  assert.ok(performance.now() - started < 500, "a cached query over 1,500 passages should not block the page");
+  const before = bm25Scores("zebra", chunks)[0];
+  chunks[0].text = "zebra zebra zebra"; // edited in place: cache must not serve stale terms
+  assert.equal(before, 0);
+  assert.ok(bm25Scores("zebra", chunks)[0] > 0);
+});

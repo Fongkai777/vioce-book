@@ -1,6 +1,7 @@
+import { aiRoute, providerFetch } from "@/lib/operations";
 import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError, responseText } from "@/lib/openai";
-import { apiErrorResponse, consumeQuota, requireApiUser } from "@/lib/quota";
+import { apiErrorResponse, consumeQuota, refundOnFailure, requireApiUser } from "@/lib/quota";
 
 const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000;
 const OCR_INDEXING_UNITS_PER_PAGE = 10_000;
@@ -19,38 +20,39 @@ export const POST = aiRoute("ocr", async (request: Request) => {
     }
 
     const user = await requireApiUser();
-    await consumeQuota(user, "embedding", OCR_INDEXING_UNITS_PER_PAGE);
+    const receipt = await consumeQuota(user, "embedding", OCR_INDEXING_UNITS_PER_PAGE);
+    return await refundOnFailure(receipt, request.signal, async () => {
 
-    const config = getOpenAIConfig();
-    const upstream = await providerFetch("ocr", user.userId, `${config.baseUrl}/responses`, {
-      method: "POST",
-      headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.ocrModel,
-        store: false,
-        instructions: [
-          "You are an OCR transcription engine.",
-          "Transcribe all readable text from the supplied PDF page image in natural reading order.",
-          "Preserve headings, paragraphs, names, numbers, punctuation, and the original language.",
-          "Do not summarize, explain, translate, or add Markdown fences.",
-          "If there is no readable text, return exactly NO_TEXT.",
-        ].join(" "),
-        input: [{
-          role: "user",
-          content: [
-            { type: "input_text", text: `Transcribe PDF page ${pageNumber}. Return only the page text.` },
-            { type: "input_image", image_url: image, detail: "high" },
-          ],
-        }],
-        max_output_tokens: 3500,
-      }),
+      const config = getOpenAIConfig();
+      const upstream = await providerFetch("ocr", user.userId, `${config.baseUrl}/responses`, {
+        method: "POST",
+        headers: { ...authHeaders(config.apiKey), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: config.ocrModel,
+          store: false,
+          instructions: [
+            "You are an OCR transcription engine.",
+            "Transcribe all readable text from the supplied PDF page image in natural reading order.",
+            "Preserve headings, paragraphs, names, numbers, punctuation, and the original language.",
+            "Do not summarize, explain, translate, or add Markdown fences.",
+            "If there is no readable text, return exactly NO_TEXT.",
+          ].join(" "),
+          input: [{
+            role: "user",
+            content: [
+              { type: "input_text", text: `Transcribe PDF page ${pageNumber}. Return only the page text.` },
+              { type: "input_image", image_url: image, detail: "high" },
+            ],
+          }],
+          max_output_tokens: 3500,
+        }),
+      });
+      if (!upstream.ok) throw await openAIError(upstream);
+      const payload = (await upstream.json()) as Parameters<typeof responseText>[0];
+      const text = responseText(payload).trim();
+      return Response.json({ text: text === "NO_TEXT" ? "" : text });
     });
-    if (!upstream.ok) throw await openAIError(upstream);
-    const payload = (await upstream.json()) as Parameters<typeof responseText>[0];
-    const text = responseText(payload).trim();
-    return Response.json({ text: text === "NO_TEXT" ? "" : text });
   } catch (error) {
     return apiErrorResponse(error);
   }
 });
-import { aiRoute, providerFetch } from "@/lib/operations";

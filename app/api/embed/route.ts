@@ -1,6 +1,7 @@
+import { aiRoute, providerFetch } from "@/lib/operations";
 import { assertSameOrigin } from "@/lib/request-security";
 import { authHeaders, getOpenAIConfig, jsonError, openAIError } from "@/lib/openai";
-import { apiErrorResponse, consumeQuota, getQuotaSnapshot, requireApiUser } from "@/lib/quota";
+import { apiErrorResponse, consumeQuota, getQuotaSnapshot, refundOnFailure, requireApiUser } from "@/lib/quota";
 
 export const POST = aiRoute("embed", async (request: Request) => {
   try {
@@ -33,27 +34,28 @@ export const POST = aiRoute("embed", async (request: Request) => {
       if ((await getQuotaSnapshot(user)).questions.remaining < 1) {
         return jsonError(new Error("Your daily question limit has been reached"), 429);
       }
-      await consumeQuota(user, "queryEmbedding", 1);
-    } else {
-      await consumeQuota(user, "embedding", texts.reduce((total, text) => total + text.length, 0));
     }
-    const upstream = await providerFetch("embed", user.userId, `${baseUrl}/embeddings`, {
-      method: "POST",
-      headers: { ...authHeaders(apiKey), "Content-Type": "application/json" },
-      body: JSON.stringify({ model, input: texts, encoding_format: "float", ...(legacy ? { dimensions: 1024 } : {}) }),
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]),
+    const receipt = purpose === "query"
+      ? await consumeQuota(user, "queryEmbedding", 1)
+      : await consumeQuota(user, "embedding", texts.reduce((total, text) => total + text.length, 0));
+    return await refundOnFailure(receipt, request.signal, async () => {
+      const upstream = await providerFetch("embed", user.userId, `${baseUrl}/embeddings`, {
+        method: "POST",
+        headers: { ...authHeaders(apiKey), "Content-Type": "application/json" },
+        body: JSON.stringify({ model, input: texts, encoding_format: "float", ...(legacy ? { dimensions: 1024 } : {}) }),
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]),
+      });
+      if (!upstream.ok) throw await openAIError(upstream);
+      const payload = (await upstream.json()) as { data: Array<{ embedding: number[]; index: number }> };
+      const embeddings = payload.data.sort((a, b) => a.index - b.index).map((item) => item.embedding);
+      const expectedSize = legacy ? 1024 : 1536;
+      if (embeddings.length !== texts.length || embeddings.some((vector) =>
+        vector.length !== expectedSize || vector.some((n) => !Number.isFinite(n)))) {
+        throw new Error("Embedding provider returned an incompatible vector");
+      }
+      return Response.json({ embeddings });
     });
-    if (!upstream.ok) throw await openAIError(upstream);
-    const payload = (await upstream.json()) as { data: Array<{ embedding: number[]; index: number }> };
-    const embeddings = payload.data.sort((a, b) => a.index - b.index).map((item) => item.embedding);
-    const expectedSize = legacy ? 1024 : 1536;
-    if (embeddings.length !== texts.length || embeddings.some((vector) =>
-      vector.length !== expectedSize || vector.some((n) => !Number.isFinite(n)))) {
-      throw new Error("Embedding provider returned an incompatible vector");
-    }
-    return Response.json({ embeddings });
   } catch (error) {
     return apiErrorResponse(error);
   }
 });
-import { aiRoute, providerFetch } from "@/lib/operations";

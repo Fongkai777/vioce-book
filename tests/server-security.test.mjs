@@ -253,6 +253,25 @@ test("answer route rejects invented source IDs instead of publishing unsupported
   } finally {if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}
 });
 
+test("server-side failures return the reader's allowance; successful answers still spend it",async()=>{
+  const user=await reader();await login();const previous=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="synthetic-test-key";
+  const contexts=[{id:"c1",sectionTitle:"Test",pageStart:1,pageEnd:1,text:"Synthetic evidence"}];
+  try {
+    globalThis.fetch=async()=>Response.json({error:{message:"synthetic upstream failure"}},{status:500});
+    assert.ok((await routes.answer.POST(request("answer",{question:"Why?",contexts}))).status>=500);
+    globalThis.fetch=async()=>Response.json({output_text:"Invented source [S9]."});
+    assert.equal((await routes.answer.POST(request("answer",{question:"Why?",contexts}))).status,502);
+    await ops.operationsSettings();database.prepare("UPDATE operations_settings SET enabled=0").run();
+    assert.equal((await routes.answer.POST(request("answer",{question:"Why?",contexts}))).status,429);
+    assert.equal((await routes.speech.POST(request("speech",{text:"hello"}))).status,429);
+    let snapshot=await quota.getQuotaSnapshot(user);assert.equal(snapshot.questions.used,0);
+    assert.equal(database.prepare("SELECT speech_characters AS n FROM daily_usage WHERE user_id=?").get(user.userId).n,0);
+    database.prepare("UPDATE operations_settings SET enabled=1").run();
+    globalThis.fetch=async()=>Response.json({output_text:"Supported [S1]."});
+    assert.equal((await routes.answer.POST(request("answer",{question:"Why?",contexts}))).status,200);
+    snapshot=await quota.getQuotaSnapshot(user);assert.equal(snapshot.questions.used,1);
+  } finally {if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}
+});
 test("global reservations are atomic across accounts and never overspend under concurrency",async()=>{
   const outcomes=await Promise.allSettled(Array.from({length:20},(_,i)=>ops.reserveProvider(`account-${i}`,1500000)));
   const accepted=outcomes.filter(r=>r.status==="fulfilled");assert.equal(accepted.length,3);

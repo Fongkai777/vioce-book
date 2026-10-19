@@ -89,7 +89,14 @@ export async function getQuotaSnapshot(user: AppUser): Promise<QuotaSnapshot> {
   };
 }
 
-export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: number) {
+export type QuotaReceipt = { userId: string; meter: Meter; amount: number; date: string };
+
+const meterColumns: Record<Meter, string> = {
+  question: "question_count", voice: "voice_seconds", embedding: "embedding_characters",
+  queryEmbedding: "query_embedding_count", speech: "speech_characters", historySummary: "history_summary_characters",
+};
+
+export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: number): Promise<QuotaReceipt> {
   if (!Number.isFinite(rawAmount) || rawAmount <= 0 || !Number.isSafeInteger(Math.ceil(rawAmount))) {
     throw new ApiError("Invalid usage amount", 400);
   }
@@ -137,4 +144,28 @@ export async function consumeQuota(user: AppUser, meter: Meter, rawAmount: numbe
     : [amount, now, user.userId, date, amount];
   const result = await statement.bind(...args).run();
   if (!result.meta.changes) throw new ApiError(spec.message, 429);
+  return { userId: user.userId, meter, amount, date };
+}
+
+// Returns allowance to the original Singapore day. Used only when the server
+// (budget gate, provider error, invalid model output) fails the request; a
+// reader-initiated cancellation keeps its charge, as documented.
+export async function refundQuota(receipt: QuotaReceipt) {
+  const column = meterColumns[receipt.meter];
+  await database().prepare(`
+    UPDATE daily_usage SET ${column} = MAX(0, ${column} - ?), updated_at = ?
+    WHERE user_id = ? AND usage_date = ?
+  `).bind(receipt.amount, new Date().toISOString(), receipt.userId, receipt.date).run();
+}
+
+export async function refundOnFailure<T>(receipt: QuotaReceipt, signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (!signal.aborted) {
+      try { await refundQuota(receipt); }
+      catch { console.error(JSON.stringify({ event: "quota_refund_failed", meter: receipt.meter })); }
+    }
+    throw error;
+  }
 }
