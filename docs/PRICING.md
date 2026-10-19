@@ -35,6 +35,8 @@ TTS currently returns binary MP3, without usage metadata. **It remains estimated
 
 The total is split into usage-priced cost, outstanding estimates/pending work, and legacy/restored estimates. A model table shows provider-reported input/cached/output tokens, request counts, settled cost and retained estimates. Tokens missing from legacy records are not invented. Existing daily totals are **not reset or repriced** by deployment. After migration, old reservations remain in the daily total until the normal day rollover.
 
+An administrator may explicitly confirm **Clear today's legacy estimates** once per Singapore day. It removes only the current aggregate minus all recorded v2 costs/reservations, with an exact date/amount check inside an atomic transaction. New costs, request counts, personal allowances, historical dates and the daily cap remain unchanged. The audit row records the administrator, removed USD micros and before/after totals; duplicate/stale attempts do not deduct again. This is a budget adjustment, not deletion of accounting evidence or a refund from the provider. A previous backup may reintroduce the old aggregate on restore; the once-per-day audit marker is preserved, preventing a second automatic deduction.
+
 The new `operations_costs` ledger stores request IDs, day, model, price-policy version, amounts and token counts only: no user ID, prompts, book passages, audio or credentials. It and the control plane are preserved during same-site server restore. Existing backup format includes aggregate daily totals but not this new diagnostic ledger, so cross-site recovery keeps the total as legacy/restored estimates. Schema migrations are additive and do not backfill or delete data.
 
 ## Verification

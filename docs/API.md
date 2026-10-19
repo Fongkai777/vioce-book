@@ -25,6 +25,8 @@ All paths are same-origin. Private endpoints derive identity from the HttpOnly `
 
 Errors are JSON `{ "error": "public message" }`. Authentication is 401, missing admin permission/cross-origin is 403, invalid fields are 400, some oversized requests are 413, exhausted application quota is 429. Upstream failures map to 502/503 without echoing provider bodies. Unknown exceptions return generic 500; malformed JSON returns generic 400. Do not depend on the precise wording of errors.
 
+`POST /api/admin/operations` accepts `{action:"clear-legacy-estimate", date:"YYYY-MM-DD", expectedMicros:integer}` for an authenticated same-origin administrator. It clears only today's exact untracked legacy estimate once per day, retaining v2 costs and recording an audit entry. Stale/duplicate adjustments return 409; invalid dates/amounts return 400. This does not change provider billing or personal account quotas.
+
 ## What leaves the browser
 
 - Original PDF files and saved vectors stay local, except the original demonstration samples bundled with the application.

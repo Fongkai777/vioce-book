@@ -58,6 +58,27 @@ export async function reserveProvider(userId: string, amount: number, now = Date
 }
 export async function releaseProvider(id: string) { await operationsDatabase().prepare("DELETE FROM operations_leases WHERE id=?").bind(id).run(); }
 
+export async function clearLegacyEstimate(actor: string, date: string, expectedMicros: number) {
+  if (date !== singaporeDate() || !Number.isSafeInteger(expectedMicros) || expectedMicros <= 0) {
+    throw new ApiError("Refresh today's budget before clearing legacy estimates.", 400);
+  }
+  const id = `legacy-estimate-clear:${date}`;
+  // Compare the untracked remainder INSIDE the same transaction as its audited
+  // adjustment. New reservations/settlements remain intact, even when racing.
+  const result = await operationsDatabase().batch([
+    operationsDatabase().prepare(`INSERT INTO operations_audit(id,actor,action,created_at)
+      SELECT ?,?, 'Legacy estimate cleared for ' || date || ': ' || CAST(? AS INTEGER) || ' USD micros; before=' || reserved_micros ||
+        '; after=' || (reserved_micros-CAST(? AS INTEGER)) || '; daily cap and request counts unchanged', ?
+      FROM operations_usage WHERE date=? AND reserved_micros-COALESCE(
+        (SELECT SUM(COALESCE(settled_micros,reserved_micros)) FROM operations_costs WHERE date=?),0)=?
+      ON CONFLICT(id) DO NOTHING`)
+      .bind(id, actor, expectedMicros, expectedMicros, new Date().toISOString(), date, date, expectedMicros),
+    operationsDatabase().prepare("UPDATE operations_usage SET reserved_micros=reserved_micros-? WHERE date=? AND changes()=1")
+      .bind(expectedMicros, date),
+  ]);
+  if (result[1].meta.changes !== 1) throw new ApiError("Legacy estimates changed or were already cleared. Refresh status; no adjustment was made.", 409);
+}
+
 export async function settleProvider(id: string, usage: PricedUsage) {
   if (![usage.micros, usage.inputTokens, usage.cachedTokens, usage.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) || usage.cachedTokens > usage.inputTokens) {
     throw new ApiError("Invalid provider usage", 502);

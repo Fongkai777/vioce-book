@@ -217,6 +217,53 @@ test("budget denial reasons distinguish pause, concurrency and insufficient rema
   database.prepare("UPDATE operations_settings SET enabled=0").run();
   await assert.rejects(ops.reserveProvider("b",1000),/paused by the administrator/);
 });
+test("admin legacy correction preserves v2 costs, pending work, quotas, cap and request counts",async()=>{
+  await login("admin");
+  const id=await ops.reserveProvider("alice",10000);await ops.settleProvider(id,{micros:1200,inputTokens:800,cachedTokens:0,outputTokens:500});
+  await ops.reserveProvider("bob",3000);
+  database.prepare("UPDATE operations_usage SET reserved_micros=reserved_micros+4742560").run();
+  const before=await ops.operationsSnapshot(),date=before.date;
+  const response=await routes["admin/operations"].POST(request("admin/operations",{action:"clear-legacy-estimate",date,expectedMicros:4742560}));
+  assert.equal(response.status,200);const after=await response.json();
+  assert.equal(after.legacyMicros,0);assert.equal(after.reservedMicros,4200);
+  assert.equal(after.settledMicros,1200);assert.equal(after.estimatedMicros,3000);
+  assert.equal(after.providerRequests,before.providerRequests);assert.deepEqual(after.settings,{...before.settings});
+  const audit=database.prepare("SELECT * FROM operations_audit WHERE id=?").get(`legacy-estimate-clear:${date}`);
+  assert.match(audit.action,/4742560 USD micros; before=4746760; after=4200/);assert.ok(audit.actor);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_costs").get().n,2);
+});
+test("legacy correction rejects stale, foreign-day, malformed and repeated requests without clearing newer costs",async()=>{
+  await ops.reserveProvider("alice",1000);database.prepare("UPDATE operations_usage SET reserved_micros=6000").run();
+  const date=quota.singaporeDate();
+  for(const amount of [0,-1,NaN,1.5])await assert.rejects(ops.clearLegacyEstimate("admin",date,amount),{status:400});
+  await assert.rejects(ops.clearLegacyEstimate("admin","2000-01-01",5000),{status:400});
+  await assert.rejects(ops.clearLegacyEstimate("admin",date,4999),{status:409});
+  const outcomes=await Promise.allSettled([ops.clearLegacyEstimate("admin",date,5000),ops.clearLegacyEstimate("admin",date,5000)]);
+  assert.equal(outcomes.filter(x=>x.status==="fulfilled").length,1);
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,1000);
+  database.prepare("UPDATE operations_usage SET reserved_micros=6000").run(); // an old restore cannot make the correction repeat
+  await assert.rejects(ops.clearLegacyEstimate("admin",date,5000),{status:409});
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage").get().reserved_micros,6000);
+});
+test("legacy correction requires admin and same origin; account allowances are untouched",async()=>{
+  const user=await reader();await login();const before=await quota.getQuotaSnapshot(user);
+  const body={action:"clear-legacy-estimate",date:quota.singaporeDate(),expectedMicros:5000};
+  assert.equal((await routes["admin/operations"].POST(request("admin/operations",body))).status,403);
+  await login("admin");
+  assert.equal((await routes["admin/operations"].POST(request("admin/operations",body,"POST",{Origin:"https://foreign.test"}))).status,403);
+  assert.equal((await routes["admin/operations"].POST(request("admin/operations",{...body,action:"reset-all"}))).status,400);
+  assert.deepEqual(await quota.getQuotaSnapshot(user),before);
+});
+test("legacy adjustment failure rolls back audit and total, and other dates are untouched",async()=>{
+  await ops.reserveProvider("alice",1000);const date=quota.singaporeDate();
+  database.prepare("UPDATE operations_usage SET reserved_micros=6000").run();
+  database.prepare("INSERT INTO operations_usage VALUES('2000-01-01',9000,1)").run();
+  database.exec("CREATE TRIGGER reject_adjust BEFORE UPDATE ON operations_usage BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+  await assert.rejects(ops.clearLegacyEstimate("admin",date,5000));
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM operations_audit").get().n,0);
+  database.exec("DROP TRIGGER reject_adjust");await ops.clearLegacyEstimate("admin",date,5000);
+  assert.equal(database.prepare("SELECT reserved_micros FROM operations_usage WHERE date='2000-01-01'").get().reserved_micros,9000);
+});
 test("transcription ignores forged client duration and rejects malformed audio before quota/provider usage",async()=>{
   const user=await reader();await login();
   const form=new FormData();form.set("audio",new File(["invalid audio"],"test.wav"));form.set("durationSeconds","1");

@@ -17,6 +17,7 @@ export default function OperationsPanel() {
   const [data, setData] = useState<Snapshot | null>(null), [health, setHealth] = useState("Checking…");
   const [budget, setBudget] = useState(5), [concurrency, setConcurrency] = useState(4), [enabled, setEnabled] = useState(true);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  const [confirmLegacy, setConfirmLegacy] = useState(false);
   const [passphrase, setPassphrase] = useState(""), [password, setPassword] = useState(""), [confirmation, setConfirmation] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const load = useCallback(async () => {
@@ -36,6 +37,13 @@ export default function OperationsPanel() {
     await payload(await fetch("/api/admin/operations", { method: "PATCH", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ dailyBudgetUsd: budget, maxConcurrent: concurrency, enabled: paused ? false : enabled }) }));
     await load(); setMessage(paused ? "AI is paused. Already accepted requests may finish." : "Operations settings saved.");
+  }
+  async function clearLegacy() {
+    if (!data || !confirmLegacy || data.legacyMicros <= 0) return;
+    await payload(await fetch("/api/admin/operations", {method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"clear-legacy-estimate",date:data.date,expectedMicros:data.legacyMicros})}));
+    setConfirmLegacy(false); await load();
+    setMessage("Today's legacy estimates cleared. New usage, account allowances and the daily budget limit are unchanged. Adjustment recorded in the audit log.");
   }
   async function exportBackup() {
     const backup = await payload(await fetch("/api/admin/backup", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({passphrase,password}) }));
@@ -69,6 +77,11 @@ export default function OperationsPanel() {
       <button className="danger-button" type="button" disabled={busy || !data} onClick={() => void run(() => save(true))}>Pause AI now</button>
     </form>
     <p className="inspector-note">Usage-priced: ${((data?.settledMicros || 0) / 1_000_000).toFixed(4)} · Estimates / pending: ${((data?.estimatedMicros || 0) / 1_000_000).toFixed(4)} · Legacy / restored estimates: ${((data?.legacyMicros || 0) / 1_000_000).toFixed(4)}</p>
+    {Boolean(data?.legacyMicros) && <div className="backup-panel">
+      <p>One-time correction for {data?.date}: remove ${(Number(data?.legacyMicros) / 1_000_000).toFixed(6)} of legacy estimates only. This restores application budget, not provider credit. New token-priced costs and pending estimates remain.</p>
+      <label className="operations-checkbox"><input type="checkbox" checked={confirmLegacy} onChange={e => setConfirmLegacy(e.target.checked)} disabled={busy} /> I confirm clearing only today's legacy estimates</label>
+      <button className="refresh-button" disabled={busy || !confirmLegacy} onClick={() => void run(clearLegacy)}>Clear today's legacy estimates</button>
+    </div>}
     <p className="inspector-note">Known models reserve an estimate, then reconcile against validated provider token usage when available. MP3 speech, missing usage and failed requests keep estimates; old records cannot be repriced without usage. This is not a provider invoice. Resets at midnight Singapore time. Keep a separate provider spending limit.</p>
     <details className="backup-panel"><summary>Token usage & cost by model</summary>
       <p>Input includes cached tokens. Output includes reasoning tokens. Prices verified October 19, 2026; unverified providers retain fallback estimates. No conversation content is recorded here.</p>

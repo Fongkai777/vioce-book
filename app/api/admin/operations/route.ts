@@ -2,11 +2,22 @@ import { requireAdminUser } from "@/lib/quota";
 import { assertSameOrigin } from "@/lib/request-security";
 import { boundedRequest } from "@/lib/bounded-request";
 import { ApiError, apiErrorResponse } from "@/lib/errors";
-import { operationsSnapshot, operationsSettings, operationsDatabase } from "@/lib/operations";
+import { operationsSnapshot, operationsSettings, operationsDatabase, clearLegacyEstimate } from "@/lib/operations";
 
 export async function GET() {
   try { await requireAdminUser(); return Response.json(await operationsSnapshot(), { headers: { "Cache-Control": "no-store" } }); }
   catch (error) { return apiErrorResponse(error); }
+}
+export async function POST(request: Request) {
+  try {
+    assertSameOrigin(request); const user = await requireAdminUser();
+    const body = await (await boundedRequest(request, 4096)).json() as {action?: unknown; date?: unknown; expectedMicros?: unknown};
+    if (!body || body.action !== "clear-legacy-estimate" || typeof body.date !== "string" || typeof body.expectedMicros !== "number") {
+      throw new ApiError("Invalid legacy estimate adjustment.", 400);
+    }
+    await clearLegacyEstimate(user.userId, body.date, body.expectedMicros);
+    return Response.json(await operationsSnapshot(), {headers:{"Cache-Control":"no-store"}});
+  } catch (error) { return apiErrorResponse(error); }
 }
 export async function PATCH(request: Request) {
   try {
