@@ -6,7 +6,7 @@
 
 面向 Wiz AI Builder Intern 作业的语音读书助手：上传 PDF，用麦克风提问，获得带原文引用的回答并自动播放。重点是长文档检索、可核对的依据和连续对话，而不是简单给聊天模型附上 PDF。
 
-**线上版本：** Sites v32，基于 [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1) 构建。[`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) 中的检索与回答语言修复已在 `main` 分支，但**尚未部署**；部署前，换话题时仍可能检索到之前问题的段落。详见[部署记录](docs/DEPLOYMENT.zh-CN.md)。
+**线上版本：** Sites **v33**，发布于新加坡时间 2026-10-20，对应源码 [`f2df8dd`](https://github.com/Fongkai777/voice-book/commit/f2df8dd1b07fdebbc35c75b02330ef1f7a505ed9)，已包含 [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) 的检索与回答语言修改。健康检查通过；尚未针对修改后的版本重做完整语音与回答质量验收。详见[部署记录](docs/DEPLOYMENT.zh-CN.md)。
 
 ## 快速体验（约 10 分钟）
 

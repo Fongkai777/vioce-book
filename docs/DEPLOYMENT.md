@@ -2,26 +2,28 @@
 
 [中文](DEPLOYMENT.zh-CN.md) · [Project overview](../README.md)
 
-> **Not yet deployed:** [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) (2026-10-20) changes application code: standalone retrieval queries, an explicit answer language and chapter-only section labels. The live site below still runs `cd4187a`. After the next release, record its version, deployment ID and source mapping here.
+The deployed application includes [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45): standalone retrieval queries, an explicit answer language and chapter-aware section labels. Existing saved books keep their stored passages; this release does not automatically re-index them.
 
 ## Current verified release
 
-Published 19 October 2026 at 15:50 UTC / 23:50 Singapore time. The live site is [Voicebook](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site).
+Published 19 October 2026 at 16:36 UTC / **20 October 2026 at 00:36 Singapore time**. The live site is [Voicebook](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site).
 
 | Item | Value |
 | --- | --- |
-| Sites version | v32 — successful production publication |
-| Matching GitHub source | [`cc28e2791303225393fb56fa7c845315e34fe5aa`](https://github.com/Fongkai777/voice-book/commit/cc28e2791303225393fb56fa7c845315e34fe5aa) |
-| GitHub application baseline | [`cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1) |
-| Sites source commit | `7d2bce22ce5682d3a272fcb23c56ad7fd9993830` |
-| Shared Git tree hash | `cfc35faa69a2b4a5c824b38698ca889098149dcd` |
-| Deployment ID | `appgdep_6ad63c23046c8191a2e0faadb0d9556f` |
+| Sites version | v33 — successful production publication |
+| Matching GitHub source | [`f2df8dd1b07fdebbc35c75b02330ef1f7a505ed9`](https://github.com/Fongkai777/voice-book/commit/f2df8dd1b07fdebbc35c75b02330ef1f7a505ed9) |
+| GitHub application baseline | [`a0d6f45f9810edbe5128e782c5419a2c1fd1d95e`](https://github.com/Fongkai777/voice-book/commit/a0d6f45f9810edbe5128e782c5419a2c1fd1d95e) |
+| Sites source commit | `d8cd37c17ed0a57f7de08f3312896a1f7f70312d` |
+| Shared Git tree hash | `533cbf8c4fe8b175ffe39982f42444026df23ef0` |
+| Deployment ID | `appgdep_6ad646fb4c388191b8ac90cc480c76e7` |
 
 GitHub and Sites retain separate Git histories; commit SHAs are not interchangeable. Both source commits have the identical Git tree hash above, covering all tracked files. Only Markdown changed after the application baseline. This deployment record and README were updated after successful publication; their follow-up documentation commit is not a different deployed application. GitHub pushes alone do not deploy the app.
 
 ## Checks and evidence boundaries
 
-- The baseline passed 150 offline tests, zero-warning lint, TypeScript, release scanning and a production build locally. The documentation release repeated those checks and the production build, with no application/test changes. All 273 local Markdown links and nine local heading links resolved.
+- The application baseline passed 153 offline tests, zero-warning lint, TypeScript, release scanning and a production build locally on 20 October (Singapore time). Publication rebuilt the matching source with release scanning; no dependency, account, secret or migration changes were made.
+- After v33 publication, `/api/health` returned HTTP 200 with database ready. No paid model calls or microphone tests were run during publication. Full hybrid-retrieval quality and real-device interruption still need post-fix measurement; offline passing tests do not establish those outcomes.
+- Earlier documentation release v32 passed 150 offline tests and validated 273 local Markdown links and nine heading links at its own baseline.
 - After v32 publication, `/api/health` again returned HTTP 200 with database ready. No paid provider, account creation, microphone or new full browser acceptance was run for this documentation-only release.
 - After v31 publication, `/api/health` returned 200 with database ready. The deployed login page rendered; one nonexistent-account probe returned 401 invalid credentials, not an IP-header 503. Worker logs recorded `auth_client_ip_status: cloudflare`; no real password or account creation was used.
 - Those observations establish the sampled deployment path, not every proxy/device, live-model availability or a full new voice acceptance run. Check [GitHub CI](https://github.com/Fongkai777/voice-book/actions/workflows/ci.yml) for remote status; local success is not a claim that queued jobs passed.

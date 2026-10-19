@@ -6,7 +6,7 @@
 
 A voice-first PDF reading companion for the Wiz AI Builder Intern take-home assignment. Upload a book, ask through your microphone, and hear an answer with clickable source passages.
 
-**Live site:** Sites v32, built from [`cd4187a`](https://github.com/Fongkai777/voice-book/commit/cd4187aeb11e6ed6d92ef4ef2dc3356c35e39ab1). The retrieval and answer-language fix in [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45) is on `main` but **not yet deployed**; until it is, a topic change can still retrieve passages from earlier questions. See the [deployment record](docs/DEPLOYMENT.md).
+**Live site:** Sites **v33**, published 20 October 2026 (Singapore time), matches source [`f2df8dd`](https://github.com/Fongkai777/voice-book/commit/f2df8dd1b07fdebbc35c75b02330ef1f7a505ed9) and includes the retrieval and answer-language changes in [`a0d6f45`](https://github.com/Fongkai777/voice-book/commit/a0d6f45). Health checks passed; the complete live voice/answer-quality run has not yet been repeated after these changes. See the [deployment record](docs/DEPLOYMENT.md).
 
 ## Try it (about 10 minutes)
 
