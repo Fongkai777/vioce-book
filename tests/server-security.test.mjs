@@ -219,6 +219,37 @@ test("invalid answer evidence fails before consuming question quota",async()=>{
   assert.equal(response.status,400);assert.equal((await quota.getQuotaSnapshot(user)).questions.used,0);
 });
 
+test("answer route normalizes source IDs and sends concise capability-bounded instructions",async()=>{
+  const user=await reader();await login();
+  const saved={key:process.env.OPENAI_API_KEY,model:process.env.OPENAI_QA_MODEL};
+  process.env.OPENAI_API_KEY="synthetic-test-key";process.env.OPENAI_QA_MODEL="gpt-5-mini";
+  const contexts=[1,2].map(n=>({id:`c${n}`,sectionTitle:"Test chapter",pageStart:1,pageEnd:1,text:"Synthetic supporting evidence."}));
+  let sent;
+  globalThis.fetch=async(_url,options)=>{sent=JSON.parse(options.body);return Response.json({output_text:"Supported [ S1 , S2 ]."});};
+  try {
+    let result=await routes.answer.POST(request("answer",{question:"Why?",contexts,revisionAnswer:"Old [ S1 ]",history:[{question:"Earlier",answer:"Old [S1,S2]"}]}));
+    assert.equal(result.status,200);assert.equal((await result.json()).answer,"Supported [S1][S2].");
+    assert.deepEqual(sent.text,{verbosity:"low"});assert.equal(sent.store,false);assert.equal(sent.tools,undefined);
+    assert.match(sent.instructions,/NO web browser/);assert.match(sent.instructions,/100–180/);
+    assert.equal(JSON.parse(sent.input).revision_answer,"Old ");
+    assert.equal(JSON.parse(sent.input).conversation.turns[0].answer,"Old ");
+    database.prepare("INSERT INTO reader_preferences(user_id,settings,updated_at) VALUES(?,?,?)").run(user.userId,JSON.stringify({length:"detailed"}),new Date().toISOString());
+    result=await routes.answer.POST(request("answer",{question:"Explain",contexts}));assert.equal(result.status,200);
+    assert.deepEqual(sent.text,{verbosity:"medium"});assert.match(sent.instructions,/300–500/);
+  } finally {
+    for(const [name,value] of [["OPENAI_API_KEY",saved.key],["OPENAI_QA_MODEL",saved.model]]) {if(value===undefined)delete process.env[name];else process.env[name]=value;}
+  }
+});
+
+test("answer route rejects invented source IDs instead of publishing unsupported citations",async()=>{
+  await reader();await login();const previous=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="synthetic-test-key";
+  globalThis.fetch=async()=>Response.json({output_text:"Invented source [S9]."});
+  try {
+    const response=await routes.answer.POST(request("answer",{question:"Why?",contexts:[{id:"c1",sectionTitle:"Test",pageStart:1,pageEnd:1,text:"Synthetic evidence"}]}));
+    assert.equal(response.status,502);const body=await response.json();assert.equal(body.answer,undefined);assert.match(body.error,/unavailable passage/);
+  } finally {if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;}
+});
+
 test("global reservations are atomic across accounts and never overspend under concurrency",async()=>{
   const outcomes=await Promise.allSettled(Array.from({length:20},(_,i)=>ops.reserveProvider(`account-${i}`,1500000)));
   const accepted=outcomes.filter(r=>r.status==="fulfilled");assert.equal(accepted.length,3);

@@ -24,7 +24,9 @@ import type { PassageTarget } from "@/lib/book-inspector";
 import VoiceSession from "./voice-session";
 import { VoiceCapture } from "@/lib/voice-capture";
 import { speechSegments, TurnGate } from "@/lib/voice-turn";
+import { normalizeCitations, stripCitations } from "@/lib/citations";
 import { VoiceDraft } from "@/lib/voice-draft";
+import { VoiceInputGate } from "@/lib/voice-input-gate";
 import { beginReply, settleReply, recoverReplies, updateVoiceMessage, leaveUnsent, type Exchange } from "@/lib/chat-turns";
 import ReplyProgress from "./reply-progress";
 import QuestionMessage from "./question-message";
@@ -54,8 +56,8 @@ function pageLabel(source: Source) {
   return source.pageStart === source.pageEnd ? `p. ${source.pageStart}` : `pp. ${source.pageStart}–${source.pageEnd}`;
 }
 
-function AnswerText({ text, onCitation }: { text: string; onCitation: (index: number) => void }) {
-  return <p className="answer-copy">{text.split(/(\[S\d+\])/g).map((part, index) => {
+function AnswerText({ text, sourceCount, onCitation }: { text: string; sourceCount: number; onCitation: (index: number) => void }) {
+  return <p className="answer-copy">{normalizeCitations(text, sourceCount).text.split(/(\[S\d+\])/g).map((part, index) => {
     const match = part.match(/^\[S(\d+)\]$/);
     return match ? <button className="citation-chip" key={`${part}-${index}`} onClick={() => onCitation(Number(match[1]) - 1)}>{match[1]}</button> : <span key={index}>{part}</span>;
   })}</p>;
@@ -81,6 +83,7 @@ export default function Home() {
   const [voiceConnecting, setVoiceConnecting] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [voiceLevel, setVoiceLevel] = useState(0);
+  const [voiceInputState, setVoiceInputState] = useState<"listening" | "transcribing" | null>(null);
   const [transcript, setTranscript] = useState("");
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
@@ -97,6 +100,7 @@ export default function Home() {
   const capture = useRef<VoiceCapture | null>(null);
   const turnGate = useRef(new TurnGate());
   const transcriptionGate = useRef(new TurnGate());
+  const voiceInputGate = useRef(new VoiceInputGate());
   const transcriptionQueue = useRef<Promise<void>>(Promise.resolve());
   const queuedTranscriptions = useRef(0);
   const voiceGeneration = useRef(0);
@@ -432,7 +436,7 @@ export default function Home() {
       pendingReply.current = null; updateExchanges(next);
       await persistExchanges(next, owner, bookId);
       signal.throwIfAborted();
-      const spokenAnswer = String(payload.answer).replace(/\[S\d+\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
+      const spokenAnswer = stripCitations(String(payload.answer)).replace(/[ \t]{2,}/g, " ").trim();
       await speak(spokenAnswer, signal, exchangeId);
     } catch (caught) {
       if (signal.aborted) return;
@@ -470,6 +474,7 @@ export default function Home() {
 
   function cancelIncoming(clear = false) {
     transcriptionGate.current.next(); transcriptionQueue.current = Promise.resolve(); queuedTranscriptions.current = 0;
+    voiceInputGate.current.finish(); setVoiceInputState(null);
     if (clear) clearTranscript();
   }
 
@@ -495,7 +500,7 @@ export default function Home() {
     voiceGeneration.current++; capture.current?.stop(); capture.current = null;
     cancelIncoming(); interruptReply(); setVoiceOn(false); setVoiceConnecting(false); setVoiceMuted(false); setVoiceLevel(0);
     if (draft.current.text) { draft.current.hold(); showDraft(); setStage("reviewing"); }
-    if (reason) setVoiceNotice(reason);
+    setVoiceNotice(reason);
   }
 
   async function startRecording() {
@@ -524,6 +529,7 @@ export default function Home() {
   function muteVoice() {
     if (!voiceMuted) { draft.current.hold(); showDraft(); }
     capture.current?.mute(!voiceMuted); setVoiceMuted(!voiceMuted);
+    if (!voiceMuted && !queuedTranscriptions.current) { voiceInputGate.current.finish(); setVoiceInputState(null); }
     if (stage === "listening") setStage(draft.current.text ? "reviewing" : "ready");
   }
 
@@ -540,17 +546,24 @@ export default function Home() {
 
   actions.current = {
     speechStart: () => {
-      interruptReply(); setError(""); setVoiceNotice(""); setStage("listening");
+      voiceInputGate.current.begin(); setVoiceInputState("listening");
+      // Stop audible speech promptly. Pending retrieval/generation is only
+      // cancelled once ASR confirms words, never by an empty noise segment.
+      if (audioPlayer.current) interruptReply();
+      if (!pendingReply.current && !playingExchange.current) setStage("listening");
+      setError(""); setVoiceNotice("");
     },
     utterance: (file, seconds) => {
       const signal = transcriptionGate.current.signal;
-      queuedTranscriptions.current++; setStage("transcribing");
+      queuedTranscriptions.current++; voiceInputGate.current.begin(); setVoiceInputState("transcribing");
+      if (!pendingReply.current && !playingExchange.current) setStage("transcribing");
       transcriptionQueue.current = transcriptionQueue.current.then(() => transcribe(file, seconds, signal)).finally(() => {
         if (signal.aborted) return;
         queuedTranscriptions.current--;
         showDraft();
         if (queuedTranscriptions.current || capture.current?.speaking) return;
-        setStage(draft.current.text ? "reviewing" : draft.current.needsReview ? "error" : "ready");
+        voiceInputGate.current.finish(); setVoiceInputState(null);
+        if (!pendingReply.current && !playingExchange.current) setStage(draft.current.text ? "reviewing" : draft.current.needsReview ? "error" : "ready");
         if (draft.current.canAutoSend(queuedTranscriptions.current, !!capture.current?.speaking)) actions.current.sendTranscript();
       });
     },
@@ -568,6 +581,7 @@ export default function Home() {
       if (!response.ok) throw new Error(payload.error || "Transcription failed");
       if (payload.quota) setQuota(payload.quota);
       const appended = draft.current.append(payload.text);
+      if (appended) interruptReply();
       if (!appended) setVoiceNotice(draft.current.text ? "That sound contained no words. Your recognized question is kept." : "I didn’t catch any words in that sound. I’m still listening — please try again.");
       if (draft.current.needsReview && draft.current.text.length >= 2000) setVoiceNotice("Your question reached the 2,000-character limit. Please review it before sending.");
       if (payload.quota && payload.quota.voice.remainingSeconds < 1) { capture.current?.stop(); capture.current = null; setVoiceOn(false); setVoiceNotice("Voice allowance reached. You can still send the recognized question."); }
@@ -580,6 +594,7 @@ export default function Home() {
   }
 
   async function playBuffer(buffer: AudioBuffer, context: AudioContext, signal: AbortSignal) {
+    await voiceInputGate.current.wait(signal);
     signal.throwIfAborted();
     if (context.state !== "running") throw new Error("Audio playback is paused by your browser. Tap Play saved audio to listen.");
     await new Promise<void>((resolve, reject) => {
@@ -710,7 +725,7 @@ export default function Home() {
                 onLeave={exchange.id === draftExchange.current && editingTranscript ? discardTranscript : undefined} />
               {!["draft", "unsent"].includes(exchange.replyStatus || "") && <div className="answer-row"><div className="answer-label"><span className="mini-mark"><Volume2 size={13} /></span> Voicebook</div>
                 {exchange.answer ? <>
-                <AnswerText text={exchange.answer} onCitation={(index) => setActiveSource(exchange.sources[index] || null)} />
+                <AnswerText text={exchange.answer} sourceCount={exchange.sources.length} onCitation={(index) => setActiveSource(exchange.sources[index] || null)} />
                 {exchange.audioInterrupted && <small className="playback-note">Voice reply interrupted · Full text kept above</small>}
                 <div className="source-strip">{exchange.sources.slice(0, 4).map((source, index) => <button key={source.id} onClick={() => setActiveSource(source)}><b>{index + 1}</b>{pageLabel(source)} · {source.sectionTitle}</button>)}</div>
                 <AnswerFeedback exchange={exchange} bookName={book?.name || ""} disabled={bookTransitionBlocked || !preferencesReady} onRewrite={instruction => void ask(exchange.question, instruction, exchange)} onRemember={async instruction => {
@@ -731,7 +746,7 @@ export default function Home() {
           </div>
 
           <div className="composer-wrap">
-            <VoiceSession active={voiceOn} connecting={voiceConnecting} level={voiceLevel} state={stage} muted={voiceMuted}
+            <VoiceSession active={voiceOn} connecting={voiceConnecting} level={voiceLevel} state={voiceInputState || stage} muted={voiceMuted}
               onMute={muteVoice} onFinish={() => capture.current?.finish()} onEnd={() => endVoice()} />
             {voiceNotice && <p className="voice-notice" role="status">{voiceNotice}</p>}
             <div className="voice-toolbar">

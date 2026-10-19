@@ -1,4 +1,5 @@
 // Small, deterministic audio/turn primitives shared by the browser and tests.
+import { stripCitations } from "./citations.ts";
 export class TurnGate {
   private current = new AbortController();
   next() { this.current.abort(); this.current = new AbortController(); return this.current.signal; }
@@ -60,7 +61,7 @@ export class VoiceDetector {
 }
 
 export function speechSegments(text: string) {
-  const clean = text.replace(/\[S\d+\]/g, "").replace(/[*#`]/g, "").trim().slice(0, 5000);
+  const clean = stripCitations(text).replace(/[*#`]/g, "").replace(/[ \t]{2,}/g, " ").trim().slice(0, 5000);
   if (clean.length <= 220) return clean ? [clean] : [];
   // A short first phrase reduces time to first audio. The rest is prefetched once.
   const split = clean.slice(50, 220).search(/[。！？.!?\n]/);

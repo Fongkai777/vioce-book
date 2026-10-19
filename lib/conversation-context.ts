@@ -1,4 +1,5 @@
 import { tokenize } from "./retrieval.mjs";
+import { stripCitations } from "./citations.ts";
 
 export type HistoryTurn = { question: string; answer: string };
 export type ConversationContext = { mode: "full" | "compressed"; turns: HistoryTurn[]; summary: string; recalled: string[]; totalTurns: number };
@@ -18,7 +19,7 @@ export const bytes = (text: string) => new TextEncoder().encode(text).length;
 export function normalizeHistory(value: unknown): HistoryTurn[] {
   if (!Array.isArray(value)) return [];
   return value.filter(x => x && typeof x.question === "string" && typeof x.answer === "string" && x.replyStatus !== "draft" && x.replyStatus !== "unsent")
-    .map(x => ({ question: x.question, answer: (x.answer ? x.answer.replace(/\[S\d+\]/g, "") : "[No assistant answer was delivered for this question. The reply was stopped, failed, or is unfinished.]") + (x.audioInterrupted === true ? "\n[Playback note: the voice reply was interrupted. Full text was displayed, but do not assume the reader heard all of it.]" : "") }));
+    .map(x => ({ question: x.question, answer: (x.answer ? stripCitations(x.answer) : "[No assistant answer was delivered for this question. The reply was stopped, failed, or is unfinished.]") + (x.audioInterrupted === true ? "\n[Playback note: the voice reply was interrupted. Full text was displayed, but do not assume the reader heard all of it.]" : "") }));
 }
 export function splitText(text: string, limit: number): string[] {
   const parts: string[] = []; let part = "", size = 0;
@@ -95,6 +96,6 @@ export function validateContext(value: unknown): ConversationContext {
     || !v.turns.every(x => x && typeof x.question === "string" && typeof x.answer === "string")
     || bytes(JSON.stringify(v)) > HISTORY_BUDGET) throw new Error("Invalid or oversized conversation context");
   if (v.mode === "full" && (v.totalTurns !== v.turns.length || v.summary || v.recalled.length)) throw new Error("Incomplete full conversation context");
-  return { mode: v.mode, turns: normalizeHistory(v.turns), summary: v.summary.replace(/\[S\d+\]/g, ""),
-    recalled: v.recalled.map(x => x.replace(/\[S\d+\]/g, "")), totalTurns: v.totalTurns };
+  return { mode: v.mode, turns: normalizeHistory(v.turns), summary: stripCitations(v.summary),
+    recalled: v.recalled.map(x => stripCitations(x)), totalTurns: v.totalTurns };
 }
