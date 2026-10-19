@@ -4,6 +4,8 @@
 
 [![CI](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml/badge.svg)](https://github.com/Fongkai777/vioce-book/actions/workflows/ci.yml)
 
+**Submission / 提交验收:** [English report](docs/acceptance/README.md) · [中文报告](docs/acceptance/README.zh-CN.md) · [Complete 12-chapter PDF](output/pdf/alice-in-wonderland.pdf) · [70-second screenshot demo](docs/acceptance/demo.mp4). Includes live microphone observations, gold pages, citation navigation and refresh checks. Reviewer credentials are supplied privately, never in this repository.
+
 Voicebook 是一个以语音为主要入口的 PDF 阅读问答网站：选书或上传 PDF，直接说出问题，获得带原文引用的回答和自动语音播放。支持扫描页 OCR、多本书与索引复用、连续追问和打断、阅读偏好、反馈重答、账号隔离及用量管理。
 
 中文读者可从[五分钟体验流程](docs/USER-MANUAL.zh-CN.md#1-五分钟开始体验)开始；开发者和考官可阅读[中文项目说明与文档导航](README.zh-CN.md)。当前定位是具备发布检查的受控演示，不代表已通过全面生产或独立安全认证。

@@ -1,0 +1,98 @@
+{
+  "title": "Alice's Adventures in Wonderland",
+  "author": "Lewis Carroll",
+  "sourceUrl": "https://www.gutenberg.org/cache/epub/11/pg11.txt",
+  "catalogUrl": "https://www.gutenberg.org/ebooks/11",
+  "retrievedDate": "2026-10-19",
+  "sourceSha256": "01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e",
+  "pdfSha256": "45775dc9ff4c8526b29dbfd6e7ac94e7bfc29c52e940e4057b8a1429c4ec85ba",
+  "pdfFile": "output/pdf/alice-in-wonderland.pdf",
+  "pdfPages": 56,
+  "chapters": [
+    {
+      "number": 1,
+      "roman": "I",
+      "title": "Down the Rabbit-Hole",
+      "pageStart": 3,
+      "pageEnd": 5
+    },
+    {
+      "number": 2,
+      "roman": "II",
+      "title": "The Pool of Tears",
+      "pageStart": 6,
+      "pageEnd": 8
+    },
+    {
+      "number": 3,
+      "roman": "III",
+      "title": "A Caucus-Race and a Long Tale",
+      "pageStart": 9,
+      "pageEnd": 11
+    },
+    {
+      "number": 4,
+      "roman": "IV",
+      "title": "The Rabbit Sends in a Little Bill",
+      "pageStart": 12,
+      "pageEnd": 15
+    },
+    {
+      "number": 5,
+      "roman": "V",
+      "title": "Advice from a Caterpillar",
+      "pageStart": 16,
+      "pageEnd": 20
+    },
+    {
+      "number": 6,
+      "roman": "VI",
+      "title": "Pig and Pepper",
+      "pageStart": 21,
+      "pageEnd": 25
+    },
+    {
+      "number": 7,
+      "roman": "VII",
+      "title": "A Mad Tea-Party",
+      "pageStart": 26,
+      "pageEnd": 30
+    },
+    {
+      "number": 8,
+      "roman": "VIII",
+      "title": "The Queen’s Croquet-Ground",
+      "pageStart": 31,
+      "pageEnd": 35
+    },
+    {
+      "number": 9,
+      "roman": "IX",
+      "title": "The Mock Turtle’s Story",
+      "pageStart": 36,
+      "pageEnd": 40
+    },
+    {
+      "number": 10,
+      "roman": "X",
+      "title": "The Lobster Quadrille",
+      "pageStart": 41,
+      "pageEnd": 44
+    },
+    {
+      "number": 11,
+      "roman": "XI",
+      "title": "Who Stole the Tarts?",
+      "pageStart": 45,
+      "pageEnd": 48
+    },
+    {
+      "number": 12,
+      "roman": "XII",
+      "title": "Alice’s Evidence",
+      "pageStart": 49,
+      "pageEnd": 52
+    }
+  ],
+  "licensePageStart": 53
+}

@@ -32,6 +32,10 @@ The latest book-management browser check covered default Overview, collapsed tec
 
 ## Real-device / release acceptance matrix
 
+### Public twelve-chapter PDF acceptance
+
+The [19 October acceptance report](acceptance/README.md) adds a reproducible public-domain PDF (12 complete story chapters / 56 pages), gold-page questions, live deployed microphone observations, source-to-PDF navigation and refresh recovery. Four synthetic-speaker → real-microphone questions produced three source-supported factual answers and one non-fabricating refusal; unnecessary refusal citations remain a quality issue. The screenshots/demo are public; reviewer credentials are not. This smoke set does not replace the proposed 25-question benchmark below.
+
 ### 2026-10-19 answer and acoustic smoke checks
 
 With explicit owner consent, three private local books (人类简史, 亲密关系, 幸福之路) reused their saved `text-embedding-v4` vectors for nine questions (six answerable, three unsupported). Actual application routes used live approved providers with isolated SQLite auth/quota adapters; this is not deployed-browser E2E. Private excerpts/results remain in ignored local outputs, never in the public repository. This small hand-reviewed smoke set is not the gold-page benchmark below.

@@ -10,6 +10,8 @@ Voicebook 是面向 Wiz AI Builder Intern 课后作业开发的语音读书助�
 
 ## 面试官快速体验
 
+完整验收可直接使用 [12 章测试 PDF](output/pdf/alice-in-wonderland.pdf)，按[中英验收报告](docs/acceptance/README.zh-CN.md)从上传开始复现；另有 [70 秒截图演示](docs/acceptance/demo.mp4)。备用普通评审账号随提交私下提供，密码不入库。内置短篇示例仅供快速体验，不替代至少 10 章的测试书。
+
 1. [打开网站](https://voicebook-rag-demo.deep-hare-2593.chatgpt.site)，创建普通账号并登录；无需 ChatGPT 账号或自行配置 API key。
 2. 点击 **Try a sample** 或 **Browse sample books**，选择预先建立索引的示例书，无需等待 PDF 处理。
 3. 点击 **Start voice conversation** 并允许麦克风，说：“请用中文解释这本书的核心观点。”停顿后，转写进入聊天栏并自动发送。

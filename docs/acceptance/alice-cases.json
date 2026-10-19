@@ -1,0 +1,31 @@
+{
+  "fixture": "output/pdf/alice-in-wonderland.pdf",
+  "pageConvention": "One-based physical PDF pages, not a historical print edition",
+  "cases": [
+    {
+      "id": "alice-watch",
+      "question": "In chapter one, what unusual thing about the White Rabbit made Alice follow it? Please answer briefly.",
+      "goldPages": [3],
+      "expected": "The rabbit took a watch from its waistcoat-pocket; Alice had never seen this and followed out of curiosity."
+    },
+    {
+      "id": "alice-mushroom",
+      "question": "In chapter five, what do the two sides of the mushroom do to Alice? Please answer in one sentence.",
+      "goldPages": [18],
+      "expected": "One side makes her taller; the other makes her shorter."
+    },
+    {
+      "id": "alice-teatime",
+      "question": "Why is it always six o clock at the tea party? Please answer briefly.",
+      "goldPages": [27, 28],
+      "expected": "The Hatter quarrelled with personified Time after the Queen accused him of murdering time; Time will no longer do what he asks, leaving it always six and tea-time."
+    },
+    {
+      "id": "alice-unsupported-salary",
+      "question": "According to this book, what is the exact annual salary of Alice's father?",
+      "goldPages": [],
+      "expected": "Acknowledge insufficient evidence; do not invent a salary or claim to have searched the web."
+    }
+  ],
+  "scope": "Small manual acceptance smoke set; not the proposed 25-question retrieval benchmark. See the acceptance report for actual observed results."
+}
