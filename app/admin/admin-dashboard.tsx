@@ -8,6 +8,8 @@ import { ArrowLeft, Check, LoaderCircle, RefreshCw, ShieldCheck, UserPlus } from
 type ManagedUser = {
   userId: string;
   username: string;
+  role: "admin" | "user";
+  active: number;
   email: string;
   displayName: string;
   lastSeenAt: string;
@@ -28,6 +30,33 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [creating, setCreating] = useState(false);
+  const [accountAction, setAccountAction] = useState<{ user: ManagedUser; action: "set-active" | "reset-password" } | null>(null);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [managing, setManaging] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  function beginAccountAction(user: ManagedUser, action: "set-active" | "reset-password") {
+    setAccountAction({ user, action }); setAdminPassword(""); setResetPassword(""); setError(""); setNotice("");
+  }
+
+  async function manageAccount(event: React.FormEvent) {
+    event.preventDefault();
+    if (!accountAction) return;
+    setManaging(true); setError("");
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: accountAction.user.userId, action: accountAction.action,
+          active: !accountAction.user.active, newPassword: resetPassword, adminPassword }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not update account");
+      setNotice(`Account @${accountAction.user.username} updated. Existing sessions have been signed out.`);
+      setAccountAction(null); await loadUsers();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not update account"); }
+    finally { setManaging(false); setAdminPassword(""); setResetPassword(""); }
+  }
 
   const loadUsers = useCallback(async () => {
     setLoading(true); setError("");
@@ -110,6 +139,14 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
         <button className="refresh-button" onClick={() => void loadUsers()} disabled={loading}><RefreshCw size={15} className={loading ? "spin" : ""} /> Refresh</button>
       </div>
       {error && <div className="admin-error">{error}</div>}
+      {notice && <p role="status">{notice}</p>}
+      {accountAction && <form className="account-security-card" onSubmit={event => void manageAccount(event)} aria-label="Account security confirmation">
+        <h2>{accountAction.action === "reset-password" ? "Reset password" : accountAction.user.active ? "Disable account" : "Enable account"}: @{accountAction.user.username}</h2>
+        <p>This signs out all existing sessions for this user. Books, history and usage are not deleted. Share any new password privately.</p>
+        {accountAction.action === "reset-password" && <label>New user password<input type="password" autoComplete="new-password" minLength={10} maxLength={128} value={resetPassword} onChange={event => setResetPassword(event.target.value)} required /></label>}
+        <label>Your administrator password<input type="password" autoComplete="current-password" maxLength={128} value={adminPassword} onChange={event => setAdminPassword(event.target.value)} required /></label>
+        <div className="settings-actions"><button type="button" disabled={managing} onClick={() => { setAccountAction(null); setAdminPassword(""); setResetPassword(""); }}>Cancel</button><button className="save-quota" disabled={managing}>{managing ? "Updating…" : "Confirm account change"}</button></div>
+      </form>}
       <form className="create-user-card" onSubmit={(event) => void createUser(event)}>
         <div><UserPlus size={19} /><span><strong>Create reviewer account</strong><small>Passwords are stored as one-way hashes.</small></span></div>
         <input aria-label="Display name" placeholder="Display name" value={newDisplayName} onChange={(event) => setNewDisplayName(event.target.value)} />
@@ -121,11 +158,13 @@ export default function AdminDashboard({ adminUsername }: { adminUsername: strin
         <div className="admin-table-wrap"><table className="admin-table">
           <thead><tr><th>User</th><th>Today</th><th>Daily questions</th><th>Daily voice</th><th /></tr></thead>
           <tbody>{users.map((user) => <tr key={user.userId}>
-            <td><strong>{user.displayName}</strong><small>@{user.username}</small><small>Last seen {new Date(user.lastSeenAt).toLocaleString()}</small></td>
+            <td><strong>{user.displayName}</strong><small>@{user.username} · {user.role === "admin" ? "Administrator" : user.active ? "Active" : "Disabled"}</small><small>Last seen {new Date(user.lastSeenAt).toLocaleString()}</small></td>
             <td><span>{user.questionCount} questions</span><span>{Math.ceil(user.voiceSeconds / 60)} voice min</span></td>
             <td><input type="number" min="0" max="500" value={user.questionLimit} onChange={(event) => updateUser(user.userId, "questionLimit", Number(event.target.value))} /><span>per day</span></td>
             <td><input type="number" min="0" max="600" step="1" value={user.voiceSecondsLimit / 60} onChange={(event) => updateUser(user.userId, "voiceMinutesLimit", Number(event.target.value))} /><span>minutes</span></td>
-            <td><button className="save-quota" onClick={() => void saveUser(user)} disabled={saving === user.userId}>{saving === user.userId ? <LoaderCircle className="spin" size={15} /> : saved === user.userId ? <Check size={15} /> : "Save"}</button></td>
+            <td><div className="account-actions"><button className="save-quota" onClick={() => void saveUser(user)} disabled={saving === user.userId}>{saving === user.userId ? <LoaderCircle className="spin" size={15} /> : saved === user.userId ? <Check size={15} /> : "Save"}</button>
+              {user.role === "user" && <><button disabled={managing} onClick={() => beginAccountAction(user, "set-active")}>{user.active ? "Disable" : "Enable"}</button><button disabled={managing} onClick={() => beginAccountAction(user, "reset-password")}>Reset password</button></>}
+            </div></td>
           </tr>)}</tbody>
         </table>{!users.length && <div className="admin-empty">Users will appear after they open Voicebook once.</div>}</div>}
       <FeedbackList />

@@ -14,6 +14,7 @@
 | `/api/auth/logout` | POST | 撤销当前会话并清除 Cookie。 |
 | `/api/quota` | GET，已登录 | 当前账号的每日用量、上限和角色。 |
 | `/api/admin/users` | GET / POST / PATCH，管理员 | 列用户、创建普通账号、按 `userId` 设置 `questionLimit`（0–500）、`voiceMinutesLimit`（0–600）。 |
+| `/api/admin/users` | PUT，管理员并再次验密 | `userId`、`adminPassword`；`action: "set-active"` 搭配布尔 `active`，或 `action: "reset-password"` 搭配 10–128 字符的 `newPassword`。仅普通用户，撤销全部会话、保留数据和额度、事务审计，请求体最多 4 KB。 |
 | `/api/preferences` | GET / PUT，已登录 | 规范化 `tone`、`length`、`guidance`、`rememberHistory`，归属当前账号。 |
 | `/api/feedback` | POST，已登录 | `exchangeId`、`bookName`、`question`、`answer`、`rating`、`tags`、`comment`，该轮内容保存到 D1。 |
 | `/api/admin/feedback` | GET，管理员 | 查看显式提交的反馈，不获取浏览器全部聊天。 |

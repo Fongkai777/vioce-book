@@ -489,3 +489,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(227, 107, 79
 .danger-button { color: #922f22; border: 1px solid #cda29c; border-radius: 8px; padding: .65rem 1rem; background: #fff6f2; min-height: 42px; cursor: pointer; }
 .operations-message { padding: 1rem; border-radius: 10px; background: #e9eee6; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .operations-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .operations-form { align-items: stretch; flex-direction: column; } }
+/* Account lifecycle actions stay separate from daily allowance editing. */
+.account-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.account-actions > button { padding: .5rem .75rem; border: 1px solid #cbd5cf; border-radius: .5rem; }
+.account-security-card { margin: 1.5rem 0; padding: 1.5rem; border: 1px solid #cbd5cf; border-radius: 1rem; background: #fffdf7; }
+.account-security-card h2 { margin: 0 0 .75rem; font-size: 1.25rem; overflow-wrap: anywhere; }
+.account-security-card label { display: grid; gap: .5rem; margin: 1rem 0; max-width: 32rem; }
+.account-security-card input { padding: .65rem; border: 1px solid #cbd5cf; border-radius: .5rem; }

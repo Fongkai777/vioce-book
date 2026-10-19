@@ -5,7 +5,11 @@ import { ApiError } from "@/lib/errors";
 
 const SESSION_COOKIE = "voicebook_session";
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
+// Existing deployment compatibility, below OWASP's recommendation; see SECURITY.md.
+// Do not raise without runtime benchmarking and a versioned rehash migration.
 const PBKDF2_ITERATIONS = 100_000;
+// Same KDF work for unknown accounts. The result is never accepted as a login.
+const DUMMY_PASSWORD_HASH = `pbkdf2$${PBKDF2_ITERATIONS}$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`;
 
 export type AppUser = {
   userId: string;
@@ -38,7 +42,21 @@ async function sha256(value: string) {
 
 export async function enforceLoginRateLimit(request: Request, usernameInput: string) {
   const username = normalizeUsername(usernameInput);
-  return enforceAuthRateLimit(request, `login:${username}`, "Too many login attempts. Try again in 15 minutes");
+  const address = clientAddress(request);
+  const buckets = [
+    { scope: `login:pair:${username}:${address}`, limit: 10 },
+    { scope: `login:account:${username}`, limit: 10 },
+    { scope: `login:ip:${address}`, limit: 50 },
+  ];
+  const results = await Promise.all(buckets.map(async bucket => {
+    const key = await sha256(bucket.scope);
+    return { key, attempts: await incrementAttempt(key), limit: bucket.limit };
+  }));
+  if (results.some(result => result.attempts > result.limit)) {
+    throw new ApiError("Too many login attempts. Try again in 15 minutes", 429);
+  }
+  // Successful login clears this pair/account only, never the shared IP bucket.
+  return results.slice(0, 2).map(result => result.key);
 }
 
 export async function enforceRegistrationRateLimit(request: Request) {
@@ -47,25 +65,33 @@ export async function enforceRegistrationRateLimit(request: Request) {
 }
 
 async function enforceAuthRateLimit(request: Request, scope: string, message: string) {
-  const address = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  const attemptKey = await sha256(`${scope}:${address}`);
+  const attemptKey = await sha256(`${scope}:${clientAddress(request)}`);
+  if (await incrementAttempt(attemptKey) > 10) throw new ApiError(message, 429);
+  return attemptKey;
+}
+
+function clientAddress(request: Request) {
+  // Cloudflare supplies this trusted header. Do not trust client X-Forwarded-For.
+  return request.headers.get("cf-connecting-ip") || "local";
+}
+
+async function incrementAttempt(attemptKey: string) {
   const now = new Date();
   const cutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
-  await db().prepare(`
+  const row = await db().prepare(`
     INSERT INTO auth_login_attempts (attempt_key, window_started_at, attempts)
     VALUES (?, ?, 1)
     ON CONFLICT(attempt_key) DO UPDATE SET
       attempts = CASE WHEN window_started_at <= ? THEN 1 ELSE attempts + 1 END,
       window_started_at = CASE WHEN window_started_at <= ? THEN excluded.window_started_at ELSE window_started_at END
-  `).bind(attemptKey, now.toISOString(), cutoff, cutoff).run();
-  const row = await db().prepare("SELECT attempts FROM auth_login_attempts WHERE attempt_key = ?")
-    .bind(attemptKey).first<{ attempts: number }>();
-  if ((row?.attempts || 0) > 10) throw new ApiError(message, 429);
-  return attemptKey;
+    RETURNING attempts
+  `).bind(attemptKey, now.toISOString(), cutoff, cutoff).first<{ attempts: number }>();
+  if (!row) throw new Error("Login rate limit unavailable");
+  return row.attempts;
 }
 
-export async function clearLoginRateLimit(attemptKey: string) {
-  await db().prepare("DELETE FROM auth_login_attempts WHERE attempt_key = ?").bind(attemptKey).run();
+export async function clearLoginRateLimit(attemptKeys: string[]) {
+  await db().batch(attemptKeys.map(key => db().prepare("DELETE FROM auth_login_attempts WHERE attempt_key = ?").bind(key)));
 }
 
 export async function verifyCurrentPassword(userId: string, password: string) {
@@ -124,19 +150,23 @@ export async function authenticate(usernameInput: string, password: string) {
       password_hash AS passwordHash, role, active
     FROM app_users WHERE username = ?
   `).bind(username).first<AppUser & { passwordHash: string; active: number }>();
-  if (!row || !row.active || !row.passwordHash || !(await verifyPassword(password, row.passwordHash))) {
+  const validPassword = await verifyPassword(password, row?.passwordHash || DUMMY_PASSWORD_HASH);
+  if (!row || !row.active || !row.passwordHash || !validPassword) {
     throw new ApiError("Invalid username or password", 401);
   }
   const token = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const tokenHash = await sha256(token);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_SECONDS * 1000);
-  await db().batch([
+  const results = await db().batch([
     db().prepare("DELETE FROM auth_sessions WHERE expires_at <= ?").bind(now.toISOString()),
-    db().prepare(`INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`)
-      .bind(tokenHash, row.userId, now.toISOString(), expiresAt.toISOString()),
-    db().prepare("UPDATE app_users SET last_seen_at = ? WHERE user_id = ?").bind(now.toISOString(), row.userId),
+    db().prepare(`INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at)
+      SELECT ?, user_id, ?, ? FROM app_users WHERE user_id = ? AND active = 1 AND password_hash = ?`)
+      .bind(tokenHash, now.toISOString(), expiresAt.toISOString(), row.userId, row.passwordHash),
+    db().prepare("UPDATE app_users SET last_seen_at = ? WHERE user_id = ? AND EXISTS(SELECT 1 FROM auth_sessions WHERE token_hash = ?)")
+      .bind(now.toISOString(), row.userId, tokenHash),
   ]);
+  if (results[1].meta.changes !== 1) throw new ApiError("Invalid username or password", 401);
   return { token, user: { userId: row.userId, username: row.username, displayName: row.displayName, role: row.role } as AppUser };
 }
 

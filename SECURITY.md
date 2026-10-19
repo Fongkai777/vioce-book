@@ -12,7 +12,9 @@ Do not open a public issue containing a credential, private document, account da
 
 - Server-only provider credentials; blank `.env.example`; private runtime files excluded from Git and release archives.
 - Random per-password salts, PBKDF2-SHA256 hashes and hashed random session tokens. HTTPS cookies are HttpOnly/Secure/SameSite=Lax with seven-day expiry. Disabled users and expired sessions are rejected.
-- Per-IP/account login throttling; current-account identity and administrator authorization enforced in server routes.
+- Atomic login limits per 15-minute window: 10 attempts per account, 10 per account/IP pair, and 50 per IP. Rotating IPs does not bypass the account limit; rotating usernames does not bypass the IP limit. Success clears account/pair counters, not the shared IP counter. Only the platform's `CF-Connecting-IP` is used; arbitrary forwarded headers are ignored. Local requests share a local bucket.
+- Missing, disabled and existing accounts all perform one password derivation and return the same invalid-credentials message. This reduces timing enumeration, not a proof of identical network timing. Account throttling can temporarily lock out a targeted user; it expires after 15 minutes.
+- Administrator-only disable/reactivate and password reset apply to regular accounts, require password reauthentication, revoke all target sessions and write a password-free audit entry in one transaction. Data and quotas remain. Administrators cannot manage themselves or other administrators here; there is no self-service recovery or forced password-change flow.
 - Self-registration is limited to two successful accounts per Singapore calendar day across the whole site, with a transactional D1 counter and regular-user-only inserts. Duplicate/failed writes roll back admission. Per-IP registration attempts are separately throttled (10/15 minutes), bodies are limited to 4 KB, and the bootstrap administrator username is reserved. Admin-created accounts bypass only the signup counter, not AI usage controls. Deletion and same-database backup restore cannot refund signup places.
 - The signup counter is control-plane state, retained on restore but not included in account snapshots. A disaster recovery into a fresh database must preserve this counter separately or wait until the next Singapore day before opening registration. No email verification or CAPTCHA is implemented; an attacker can occupy the two daily places, so administrators can still invite reviewers directly.
 - Same-origin mutation checks, typed public errors, no raw upstream error-body disclosure, atomic conditional quota updates.
@@ -20,6 +22,12 @@ Do not open a public issue containing a credential, private document, account da
 - Deterministic tests run without provider credentials or network requests. CI has read-only repository permissions and no deployment secrets.
 
 ## Limits
+
+### Password hashing
+
+Login hashes retain PBKDF2-SHA256 at 100,000 iterations for compatibility with this existing deployment. This is **below** the [OWASP recommendation of 600,000 for PBKDF2-HMAC-SHA256](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html). Worker limits have varied by runtime/configuration ([upstream discussion](https://github.com/cloudflare/workerd/issues/1346)); do not assume every current Worker has the same cap. Before unrestricted access, benchmark the actual hosted runtime and migrate to a supported stronger KDF or managed identity, with versioned hashes and rehash-on-login. Rate limits and dummy derivation do not replace password hardening.
+
+A client-submitted fingerprint would not establish excerpt provenance. Server-enforced grounding requires a trusted ingestion/manifest design, not merely checking a client hash.
 
 ### Dependency review (2026-10-19)
 
@@ -41,7 +49,7 @@ Retrying the same chat message reuses its successful retrieval while the questio
 
 All six paid AI paths now use an atomic global daily reservation budget (default US$5), a persistent kill switch, global/per-user concurrency leases and bounded request reads. This is an estimated spend circuit breaker, **not a guaranteed provider-invoice cap**: known models use versioned token rates, custom providers and TTS still have estimates, and other applications sharing a key are outside its scope. Transcription duration is verified server-side from canonical PCM WAV data. Set a separate provider-side billing limit.
 
-Manual backups use AES-256-GCM with a random salt/nonce and PBKDF2-SHA256 (100,000 iterations; Worker-compatible). Use a long, randomly generated passphrase, stored separately. Administrator backup contains password hashes and feedback; never publish it. Restore requires admin authorization, same-origin, password reauthentication, explicit confirmation, paused/drained AI and a valid encrypted snapshot. Restore is transactional, revokes sessions and cannot reduce global reserved spend. Book restore checks account ownership and preserves existing indexes/newer conversation turns. No automatic/cloud backup, scheduled monitoring, MFA, password recovery UI, comprehensive retention policy, backup/restore SLA or independent audit is provided.
+Manual backups use AES-256-GCM with a random salt/nonce and PBKDF2-SHA256 (100,000 iterations; Worker-compatible). Use a long, randomly generated passphrase, stored separately. Administrator backup contains password hashes and feedback; never publish it. Restore requires admin authorization, same-origin, password reauthentication, explicit confirmation, paused/drained AI and a valid encrypted snapshot. Restore is transactional, revokes sessions and cannot reduce global reserved spend. Book restore checks account ownership and preserves existing indexes/newer conversation turns. No automatic/cloud backup, scheduled monitoring, MFA, self-service password recovery UI, comprehensive retention policy, backup/restore SLA or independent audit is provided.
 
 ## Repository hygiene
 

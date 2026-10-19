@@ -67,7 +67,70 @@ test("login validates lengths and JSON before hashing and applies per-IP/account
   await assert.rejects(auth.enforceLoginRateLimit(req,"admin"),{status:429});
   database.prepare("UPDATE auth_login_attempts SET window_started_at='2000-01-01'").run();
   const key=await auth.enforceLoginRateLimit(req,"admin");await auth.clearLoginRateLimit(key);
-  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM auth_login_attempts").get().n,0);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM auth_login_attempts").get().n,1,"successful login retains the shared IP budget");
+});
+test("login throttles a target across rotating IPs and password spraying across usernames",async()=>{
+  for(let i=0;i<10;i++)await auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":`192.0.2.${i}`}),"target");
+  await assert.rejects(auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":"192.0.2.99"})," TARGET "),{status:429});
+  for(let i=0;i<50;i++)await auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":"198.51.100.1"}),`name${i}`);
+  await assert.rejects(auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":"198.51.100.1"}),"another"),{status:429});
+});
+test("concurrent login attempts admit at most ten per account; forwarded headers cannot rotate local IP",async()=>{
+  const outcomes=await Promise.allSettled(Array.from({length:20},(_,i)=>auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"cf-connecting-ip":`192.0.2.${i}`}),"target")));
+  assert.equal(outcomes.filter(r=>r.status==="fulfilled").length,10);
+  for(let i=0;i<50;i++)await auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"x-forwarded-for":`198.51.100.${i}`}),`name${i}`);
+  await assert.rejects(auth.enforceLoginRateLimit(request("auth/login",{},"POST",{"x-forwarded-for":"198.51.100.100"}),"newname"),{status:429});
+});
+test("unknown, wrong-password and disabled accounts all execute one PBKDF2 verification",async()=>{
+  const user=await reader();await auth.ensureBootstrapAdmin();
+  const derive=crypto.subtle.deriveBits;let calls=0;
+  crypto.subtle.deriveBits=function(...args){calls++;return derive.apply(this,args);};
+  try {
+    for(const name of ["missing","reader"]){calls=0;await assert.rejects(auth.authenticate(name,"incorrect"),{status:401});assert.equal(calls,1);}
+    database.prepare("UPDATE app_users SET active=0 WHERE user_id=?").run(user.userId);
+    calls=0;await assert.rejects(auth.authenticate("reader","synthetic-reader-password"),{status:401});assert.equal(calls,1);
+  } finally {crypto.subtle.deriveBits=derive;}
+});
+test("password or status changes during verification cannot create a stale login session",async()=>{
+  const user=await reader();await auth.ensureBootstrapAdmin();
+  const derive=crypto.subtle.deriveBits;
+  crypto.subtle.deriveBits=async function(...args){const result=await derive.apply(this,args);database.prepare("UPDATE app_users SET active=0 WHERE user_id=?").run(user.userId);return result;};
+  try {await assert.rejects(auth.authenticate("reader","synthetic-reader-password"),{status:401});assert.equal(database.prepare("SELECT COUNT(*) AS n FROM auth_sessions").get().n,0);}
+  finally {crypto.subtle.deriveBits=derive;}
+});
+test("admin account controls require reauthentication and revoke sessions without deleting data",async()=>{
+  const user=await reader();await login();const oldReaderCookie=jar.get("voicebook_session");
+  await quota.consumeQuota(user,"question",1);
+  const action={userId:user.userId,action:"set-active",active:false,adminPassword:env.ADMIN_PASSWORD};
+  assert.equal((await routes["admin/users"].PUT(request("admin/users",action,"PUT"))).status,403);
+  await login("admin");const adminCookie=jar.get("voicebook_session");
+  assert.equal((await routes["admin/users"].PUT(request("admin/users",{...action,adminPassword:"wrong"},"PUT"))).status,401);
+  assert.equal((await routes["admin/users"].PUT(request("admin/users",action,"PUT"))).status,200);
+  jar.set("voicebook_session",oldReaderCookie);assert.equal(await auth.getAuthenticatedUser(),null);
+  await assert.rejects(auth.authenticate("reader","synthetic-reader-password"),{status:401});
+  jar.set("voicebook_session",adminCookie);
+  assert.equal((await routes["admin/users"].PUT(request("admin/users",{...action,active:true},"PUT"))).status,200);
+  assert.equal(database.prepare("SELECT question_count AS n FROM daily_usage WHERE user_id=?").get(user.userId).n,1);
+  const resetBody={userId:user.userId,action:"reset-password",newPassword:"synthetic-new-password",adminPassword:env.ADMIN_PASSWORD};
+  assert.equal((await routes["admin/users"].PUT(request("admin/users",resetBody,"PUT"))).status,200);
+  await assert.rejects(auth.authenticate("reader","synthetic-reader-password"),{status:401});
+  await auth.authenticate("reader","synthetic-new-password");
+  const list=await (await routes["admin/users"].GET()).json();assert.equal(list.users.find(x=>x.userId===user.userId).active,1);
+  const audit=database.prepare("SELECT action FROM operations_audit").all();assert.equal(audit.length,3);assert.ok(audit.every(x=>!x.action.includes("password",15)&&!x.action.includes("synthetic")));
+});
+test("account changes reject admin targets, invalid input, foreign origins and roll back together",async()=>{
+  const user=await reader();await login();await login("admin");const admin=await auth.getAuthenticatedUser();
+  const body={userId:user.userId,action:"reset-password",newPassword:"synthetic-new-password",adminPassword:env.ADMIN_PASSWORD};
+  const call=(patch,headers={})=>routes["admin/users"].PUT(request("admin/users",{...body,...patch},"PUT",headers));
+  assert.equal((await call({userId:admin.userId})).status,403);
+  assert.equal((await call({userId:"absent"})).status,404);
+  assert.equal((await call({newPassword:"short"})).status,400);
+  assert.equal((await call({}, {origin:"https://foreign.test"})).status,403);
+  const before=database.prepare("SELECT password_hash FROM app_users WHERE user_id=?").get(user.userId).password_hash;
+  database.exec("CREATE TRIGGER reject_account_audit BEFORE INSERT ON operations_audit BEGIN SELECT RAISE(ABORT,'synthetic'); END");
+  assert.equal((await call({})).status,500);
+  assert.equal(database.prepare("SELECT password_hash FROM app_users WHERE user_id=?").get(user.userId).password_hash,before);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id=?").get(user.userId).n,1);
 });
 test("every mutation route rejects foreign origins before auth, parsing or provider work",async()=>{
   for(const [path,route] of Object.entries(routes))for(const method of ["POST","PUT","PATCH","DELETE"]){

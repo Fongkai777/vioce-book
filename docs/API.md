@@ -12,6 +12,7 @@ All paths are same-origin. Private endpoints derive identity from the HttpOnly `
 | `/api/auth/logout` | POST | Revokes current server session and expires cookie |
 | `/api/quota` | GET, signed in | Current account's daily usage, limits and role |
 | `/api/admin/users` | GET / POST / PATCH, admin | List users; create regular account; set `userId`, `questionLimit` (0–500), `voiceMinutesLimit` (0–600) |
+| `/api/admin/users` | PUT, admin + reauthentication | `userId`, `adminPassword`, `action: "set-active"` with boolean `active`, or `action: "reset-password"` with `newPassword` (10–128 characters). Regular users only; revokes sessions, retains data/quotas, transactional audit. Body limit 4 KB |
 | `/api/preferences` | GET / PUT, signed in | Normalized `tone`, `length`, `guidance`, `rememberHistory`; stored in D1 under current account |
 | `/api/feedback` | POST, signed in | `exchangeId`, `bookName`, `question`, `answer`, `rating`, `tags`, `comment`; sends that answer's content to D1 |
 | `/api/admin/feedback` | GET, admin | Review explicit feedback; not automatic access to browser chat history |
