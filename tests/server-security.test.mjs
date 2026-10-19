@@ -327,7 +327,7 @@ test("answer route normalizes source IDs and sends concise capability-bounded in
     let result=await routes.answer.POST(request("answer",{question:"Why?",contexts,revisionAnswer:"Old [ S1 ]",history:[{question:"Earlier",answer:"Old [S1,S2]"}]}));
     assert.equal(result.status,200);assert.equal((await result.json()).answer,"Supported [S1][S2].");
     assert.deepEqual(sent.text,{verbosity:"low"});assert.equal(sent.store,false);assert.equal(sent.tools,undefined);
-    assert.match(sent.instructions,/NO web browser/);assert.match(sent.instructions,/100–180/);
+    assert.match(sent.instructions,/NO web browser/);assert.match(sent.instructions,/100–180/);assert.match(sent.instructions,/Write the entire answer in English/);
     assert.equal(JSON.parse(sent.input).revision_answer,"Old ");
     assert.equal(JSON.parse(sent.input).conversation.turns[0].answer,"Old ");
     database.prepare("INSERT INTO reader_preferences(user_id,settings,updated_at) VALUES(?,?,?)").run(user.userId,JSON.stringify({length:"detailed"}),new Date().toISOString());

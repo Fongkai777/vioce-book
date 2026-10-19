@@ -51,3 +51,16 @@ test("BM25 stays fast on a long book and reuses cached chunk statistics", () => 
   assert.equal(before, 0);
   assert.ok(bm25Scores("zebra", chunks)[0] > 0);
 });
+
+test("books with chapter headings ignore all-caps songs and choruses as sections", () => {
+  const chunks = buildStructuralChunks([
+    { pageNumber: 1, text: "CHAPTER I. Down the Rabbit-Hole\nAlice was beginning to get very tired." },
+    { pageNumber: 2, text: "She sang a song.\nCHORUS.\nWow! wow! wow!\nTHE KING AND QUEEN OF HEARTS.\nThe court assembled." },
+    { pageNumber: 3, text: "CHAPTER II. The Pool of Tears\nCuriouser and curiouser!" },
+  ], 2000, 0);
+  assert.deepEqual(chunks.map(chunk => chunk.sectionTitle), ["CHAPTER I. Down the Rabbit-Hole", "CHAPTER II. The Pool of Tears"]);
+  assert.match(chunks[0].text, /CHORUS\.\nWow/);
+  // Documents without explicit chapters still use the broader heading heuristic.
+  const plain = buildStructuralChunks([{ pageNumber: 1, text: "INTRODUCTION OVERVIEW\nBody text here." }], 2000, 0);
+  assert.equal(plain[0].sectionTitle, "INTRODUCTION OVERVIEW");
+});

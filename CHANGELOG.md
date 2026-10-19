@@ -4,6 +4,13 @@
 
 Entries describe delivered changes, not an unrestricted-production certification. Public Git history is retained. Current hosted provenance is in the [deployment record](docs/DEPLOYMENT.md); dated test evidence is in [evaluation](docs/EVALUATION.md).
 
+## 2026-10-20 — Retrieval and answer-language fixes (from a live voice run)
+
+- Retrieval no longer mixes earlier questions and answers into the search query; only dependent follow-ups borrow the previous question. The full conversation still goes to the answer model.
+- Each answer request states the reply language from the current question, so an English question is no longer answered in Chinese.
+- Books with explicit chapter headings no longer turn all-caps songs or choruses into citation section labels. Existing saved books keep their stored passages until re-uploaded.
+- Recorded the 2026-10-20 live microphone results, including failures, in the [validation log](docs/EVALUATION-LOG.md).
+
 ## 2026-10-19 — Documentation
 
 - Added the English user guide and aligned quota refunds, regular-account administration and CI instructions across both languages.

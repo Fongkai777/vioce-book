@@ -51,3 +51,21 @@ A separate production Worker build ran against a new disposable local D1 databas
 The public production registration endpoint was checked read-only and still reported **2/2 places available on 2026-10-19**. No production registration place was consumed by these acceptance tests. This is an observation at test time, not a promise that later visitors cannot fill the daily cap.
 
 Operations validation on 2026-10-19 additionally used the built Worker in local Wrangler with a new temporary D1 directory and synthetic credentials: all seven migrations applied; admin login and readiness succeeded; US$5 default displayed; encrypted export, wrong-passphrase rejection, restore, session revocation, recovered-account login and explicit resume passed. The responsive administrator panel was inspected in the browser. `scripts/check-operations.mjs` reproduces the destructive **test-database-only** drill, requiring `VOICEBOOK_QA_DISPOSABLE=1` and an HTTP loopback target; it must never be pointed at user data. No production records or real model calls were involved.
+
+## 2026-10-20 live microphone run (v32) and retrieval fix
+
+Chrome on macOS, deployed v32, fresh upload of the committed Alice PDF (SHA-256 matched; 148 passages in about 8.5 s). Seven questions were spoken by the macOS Samantha voice through the speakers into the real microphone. All seven transcripts auto-submitted; one changed "What" to "But" without changing the request. End of speech to first answer audio was about 17–20 s (transcription 4–6 s, retrieval 2 s, answer 5–10 s, first speech 3–5 s), well above the 8 s target.
+
+| Question | Result |
+| --- | --- |
+| Bottle label (gold p. 4) | Correct, cited pp. 4–5 |
+| Croquet balls and mallets (p. 33) | Correct, cited p. 33 |
+| Cheshire Cat disappearing (p. 25) | **Wrong**: said only the head remained (a chapter VIII scene); p. 25 passage outranked by earlier topics |
+| Follow-up: what Alice said (p. 25) | Correct referent and quotation |
+| How the story ends (p. 52) | **Not answered**: no final-chapter passage retrieved; model declined rather than inventing |
+| Teacher's name (unanswerable) | Correct refusal; still cited all six passages |
+| Who is Bill (pp. 13–14) | Correct content, cited p. 14, but **answered in Chinese** to an English question |
+
+Interrupting by voice while an answer was audibly playing through speakers was not detected; speaking before playback started did cancel it and submitted the new question. One reply stayed in "Preparing the spoken reply" for about a minute before that interruption; the cause was not isolated. The built-in desktop browser pane blocks microphone access, and the app showed its permission-denied message correctly.
+
+Root causes found: the retrieval query concatenated the previous question and recalled earlier answers, dragging results back to old topics; the answer language was implicit; all-caps song lines ("CHORUS.") became section labels. Fix: retrieval uses the question alone unless it depends on the previous turn (pronouns, "and/why/what about", very short follow-ups, explicit turn references), the answer prompt states the reply language per turn, and books with explicit chapter headings use only those as sections. Replaying the same conversation offline with keyword ranking only, the follow-up and Bill questions moved from miss to hit and labels became the twelve chapter titles; the Cheshire Cat and ending questions still miss in keyword-only ranking, so the full hybrid result must be re-measured after deployment.
